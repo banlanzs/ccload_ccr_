@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 
 	"github.com/gin-gonic/gin"
 )

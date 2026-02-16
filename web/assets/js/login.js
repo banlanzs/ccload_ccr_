@@ -53,8 +53,8 @@
           const data = resp.data || {};
 
           // 存储Token到localStorage
-          localStorage.setItem('ccload_token', data.token);
-          localStorage.setItem('ccload_token_expiry', Date.now() + data.expiresIn * 1000);
+          localStorage.setItem('ccload+ccr_token', data.token);
+          localStorage.setItem('ccload+ccr_token_expiry', Date.now() + data.expiresIn * 1000);
 
           // 登录成功，添加成功动画
           loginButton.style.background = 'linear-gradient(135deg, var(--success-500), var(--success-600))';

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/gin-gonic/gin"
 )

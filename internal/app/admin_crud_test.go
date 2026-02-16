@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 
 	"github.com/gin-gonic/gin"
 )

@@ -344,6 +344,28 @@
             </table>
           </div>
         </div>
+        <!-- CCR 格式转换配置 -->
+        <div class="form-group">
+          <details>
+            <summary class="form-label" style="cursor: pointer; user-select: none;">
+              <span data-i18n="channels.advancedSettings">高级设置</span>
+            </summary>
+            <div style="margin-top: 12px; padding-left: 16px; border-left: 2px solid var(--neutral-200);">
+              <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <input type="checkbox" id="channelEnableCCR">
+                <span data-i18n="channels.enableCCR">启用 CCR 格式转换</span>
+              </label>
+              <div id="ccrTransformerGroup" style="display: none; margin-left: 24px;">
+                <label class="form-label" for="channelCCRTransformer" data-i18n="channels.ccrTransformer">转换器类型</label>
+                <select id="channelCCRTransformer" class="form-input">
+                  <option value="">-- 选择转换器 --</option>
+                  <option value="openai_to_claude">OpenAI → Claude</option>
+                  <option value="claude_to_openai">Claude → OpenAI</option>
+                </select>
+              </div>
+            </div>
+          </details>
+        </div>
         <div class="form-group">
           <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
             <label class="form-label" style="margin: 0;">

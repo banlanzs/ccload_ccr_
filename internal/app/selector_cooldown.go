@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	modelpkg "ccLoad/internal/model"
+	modelpkg "ccLoad+ccr/internal/model"
 )
 
 // filterCooldownChannels 过滤冷却中的渠道

@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 )
 
 const minuteMs int64 = 60_000 // 用于 minute_bucket 计算

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	modelpkg "ccLoad/internal/model"
-	"ccLoad/internal/util"
+	modelpkg "ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 )
 
 // selectCandidatesByChannelType 根据渠道类型选择候选渠道

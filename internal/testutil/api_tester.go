@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 
 	"github.com/bytedance/sonic"
 )

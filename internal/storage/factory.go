@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"ccLoad/internal/config"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/config"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
 	_ "modernc.org/sqlite"             // SQLite driver

@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/util"
 )
 
 // ============================================================================

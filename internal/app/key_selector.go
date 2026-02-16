@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // KeySelector 负责从渠道的多个API Key中选择可用的Key

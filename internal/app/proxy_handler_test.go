@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/util"
 )
 
 func TestHandleProxyRequest_UnknownPathReturns404(t *testing.T) {

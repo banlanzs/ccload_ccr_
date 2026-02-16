@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // GetStats 实现统计功能，按渠道和模型统计成功/失败次数

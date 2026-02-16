@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"ccLoad/internal/version"
+	"ccLoad+ccr/internal/version"
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/model"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 )
 
 func TestMetrics_BasicQueriesAndFilters(t *testing.T) {

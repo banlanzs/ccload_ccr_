@@ -25,13 +25,13 @@
    * @returns {Promise<Response>}
    */
   async function fetchWithAuth(url, options = {}) {
-    const token = localStorage.getItem('ccload_token');
-    const expiry = localStorage.getItem('ccload_token_expiry');
+    const token = localStorage.getItem('ccload+ccr_token');
+    const expiry = localStorage.getItem('ccload+ccr_token_expiry');
 
     // 检查Token过期（静默跳转，不显示错误提示）
     if (!token || (expiry && Date.now() > parseInt(expiry))) {
-      localStorage.removeItem('ccload_token');
-      localStorage.removeItem('ccload_token_expiry');
+      localStorage.removeItem('ccload+ccr_token');
+      localStorage.removeItem('ccload+ccr_token_expiry');
       window.location.href = getLoginUrl();
       throw new Error('Token expired');
     }
@@ -46,8 +46,8 @@
 
     // 处理401未授权（静默跳转，不显示错误提示）
     if (response.status === 401) {
-      localStorage.removeItem('ccload_token');
-      localStorage.removeItem('ccload_token_expiry');
+      localStorage.removeItem('ccload+ccr_token');
+      localStorage.removeItem('ccload+ccr_token_expiry');
       window.location.href = getLoginUrl();
       throw new Error('Unauthorized');
     }
@@ -186,8 +186,8 @@
   }
 
   function isLoggedIn() {
-    const token = localStorage.getItem('ccload_token');
-    const expiry = localStorage.getItem('ccload_token_expiry');
+    const token = localStorage.getItem('ccload+ccr_token');
+    const expiry = localStorage.getItem('ccload+ccr_token_expiry');
     return token && (!expiry || Date.now() <= parseInt(expiry));
   }
 
@@ -324,9 +324,9 @@
     if (!confirm(t('confirm.logout'))) return;
 
     // 先清理本地Token，避免后续请求触发token检查
-    const token = localStorage.getItem('ccload_token');
-    localStorage.removeItem('ccload_token');
-    localStorage.removeItem('ccload_token_expiry');
+    const token = localStorage.getItem('ccload+ccr_token');
+    localStorage.removeItem('ccload+ccr_token');
+    localStorage.removeItem('ccload+ccr_token_expiry');
 
     // 如果有token，尝试调用后端登出接口（使用普通fetch，不触发token检查）
     if (token) {

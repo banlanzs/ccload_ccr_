@@ -8,7 +8,7 @@ import (
 	"log"
 	"strings"
 
-	"ccLoad/internal/storage/schema"
+	"ccLoad+ccr/internal/storage/schema"
 )
 
 // Dialect 数据库方言
@@ -76,6 +76,10 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 		if tb.Name() == "channels" {
 			if err := ensureChannelsDailyCostLimit(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels daily_cost_limit: %w", err)
+			}
+			// 增量迁移：确保channels表有CCR格式转换字段（2026-02新增）
+			if err := ensureChannelsCCRColumns(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels ccr columns: %w", err)
 			}
 		}
 
@@ -1147,5 +1151,20 @@ func ensureAuthTokensCostLimit(ctx context.Context, db *sql.DB, dialect Dialect)
 	return ensureSQLiteColumns(ctx, db, "auth_tokens", []sqliteColumnDef{
 		{name: "cost_used_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "cost_limit_microusd", definition: "INTEGER NOT NULL DEFAULT 0"},
+	})
+}
+
+// ensureChannelsCCRColumns 确保channels表有CCR格式转换字段（2026-02新增）
+func ensureChannelsCCRColumns(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "channels", []mysqlColumnDef{
+			{name: "enable_ccr", definition: "TINYINT NOT NULL DEFAULT 0"},
+			{name: "ccr_transformer", definition: "VARCHAR(64) NOT NULL DEFAULT ''"},
+		})
+	}
+
+	return ensureSQLiteColumns(ctx, db, "channels", []sqliteColumnDef{
+		{name: "enable_ccr", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "ccr_transformer", definition: "TEXT NOT NULL DEFAULT ''"},
 	})
 }

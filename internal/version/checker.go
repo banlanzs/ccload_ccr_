@@ -62,7 +62,7 @@ func (c *Checker) check() {
 		return
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "ccLoad/"+Version)
+	req.Header.Set("User-Agent", "ccLoad+ccr/"+Version)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

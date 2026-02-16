@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestHybridStore_WrapperCoverage(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestTryChannelWithKeys_ContextCanceled_Returns499(t *testing.T) {

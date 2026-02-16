@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 )
 
 // TestCooldownConsistency_401Error 验证401错误时Key级别和渠道级别冷却时间一致性

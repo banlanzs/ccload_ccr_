@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 )
 
 // Action 表示冷却后的建议行动类型。

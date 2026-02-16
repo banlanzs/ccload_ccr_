@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/app"
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/app"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 // contextKey 自定义类型用于 context key，避免 SA1029 警告

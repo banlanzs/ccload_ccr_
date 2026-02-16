@@ -2,10 +2,13 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"ccLoad+ccr/internal/ccr"
 )
 
 // ModelEntry 模型配置条目
@@ -51,6 +54,10 @@ type Config struct {
 
 	// 每日成本限额
 	DailyCostLimit float64 `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
+
+	// CCR 格式转换配置
+	EnableCCR      bool   `json:"enable_ccr"`       // 是否启用 CCR 格式转换
+	CCRTransformer string `json:"ccr_transformer"` // 转换器类型: "openai_to_claude" | "claude_to_openai"
 
 	CreatedAt JSONTime `json:"created_at"` // 使用JSONTime确保序列化格式一致（RFC3339）
 	UpdatedAt JSONTime `json:"updated_at"` // 使用JSONTime确保序列化格式一致（RFC3339）
@@ -128,6 +135,22 @@ func (c *Config) GetChannelType() string {
 // IsCoolingDown 检查渠道是否处于冷却状态
 func (c *Config) IsCoolingDown(now time.Time) bool {
 	return c.CooldownUntil > now.Unix()
+}
+
+// ValidateCCRConfig 验证 CCR 格式转换配置
+func (c *Config) ValidateCCRConfig() error {
+	if !c.EnableCCR {
+		return nil
+	}
+	c.CCRTransformer = strings.TrimSpace(c.CCRTransformer)
+	if c.CCRTransformer == "" {
+		return errors.New("ccr_transformer cannot be empty when enable_ccr is true")
+	}
+	// 验证转换器是否存在
+	if _, err := ccr.GetTransformer(c.CCRTransformer); err != nil {
+		return fmt.Errorf("invalid ccr_transformer: %w", err)
+	}
+	return nil
 }
 
 // KeyStrategy 常量定义

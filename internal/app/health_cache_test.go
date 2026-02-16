@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestHealthCache_Defaults(t *testing.T) {

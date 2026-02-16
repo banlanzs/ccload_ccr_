@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestSystemSettings_GetSetting(t *testing.T) {

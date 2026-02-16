@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/util"
 )
 
 // ==================== 渠道级冷却方法（操作 channels 表内联字段）====================

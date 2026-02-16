@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"time"
 
-	"ccLoad/internal/config"
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/config"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"

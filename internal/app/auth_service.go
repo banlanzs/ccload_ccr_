@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"ccLoad/internal/config"
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/config"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"

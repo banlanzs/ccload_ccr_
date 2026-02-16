@@ -194,6 +194,9 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.priority': '优先级',
   'channels.dailyCostLimit': '每日限额',
   'channels.dailyCostLimitPlaceholder': '0=无限制',
+  'channels.advancedSettings': '高级设置',
+  'channels.enableCCR': '启用 CCR 格式转换',
+  'channels.ccrTransformer': '转换器类型',
 
   // 删除确认（扁平化键名）
   'channels.confirmDeleteTitle': '确认删除',

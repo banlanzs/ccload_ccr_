@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 // HealthCache 渠道健康度缓存

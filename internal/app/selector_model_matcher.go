@@ -1,7 +1,7 @@
 package app
 
 import (
-	modelpkg "ccLoad/internal/model"
+	modelpkg "ccLoad+ccr/internal/model"
 )
 
 // configSupportsModel 检查渠道是否支持指定模型

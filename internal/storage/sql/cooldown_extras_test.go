@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/model"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 )
 
 func TestCooldown_GetKeyCooldownUntil_AndClearAll(t *testing.T) {

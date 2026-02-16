@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // ==================== CSV导入导出集成测试 ====================

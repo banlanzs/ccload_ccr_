@@ -3,8 +3,8 @@ package sql_test
 import (
 	"testing"
 
-	"ccLoad/internal/model"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/model"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 )
 
 func TestWhereBuilder_ApplyLogFilter(t *testing.T) {

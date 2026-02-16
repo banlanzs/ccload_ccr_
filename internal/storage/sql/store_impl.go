@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // SQLStore 通用SQL存储实现

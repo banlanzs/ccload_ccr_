@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/testutil"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/testutil"
 )
 
 // TestSelectRouteCandidates_NormalRequest 测试普通请求的路由选择

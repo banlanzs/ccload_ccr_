@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // CreateAdminSession 创建管理员会话

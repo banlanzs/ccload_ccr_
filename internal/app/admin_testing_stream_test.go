@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/testutil"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/testutil"
 )
 
 func TestTestChannelAPI_StreamIncludesUsageAndCost(t *testing.T) {

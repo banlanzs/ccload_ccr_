@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 // StatsCache 统计结果缓存层

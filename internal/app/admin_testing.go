@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/testutil"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/testutil"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/bytedance/sonic"
 	"github.com/gin-gonic/gin"

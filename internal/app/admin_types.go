@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/ccr"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 )
 
 // ==================== 共享数据结构 ====================
@@ -24,6 +25,8 @@ type ChannelRequest struct {
 	Models         []model.ModelEntry `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
 	Enabled        bool               `json:"enabled"`
 	DailyCostLimit float64            `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
+	EnableCCR      bool               `json:"enable_ccr"`       // 是否启用 CCR 格式转换
+	CCRTransformer string             `json:"ccr_transformer"`  // 转换器类型: "openai_to_claude" | "claude_to_openai"
 }
 
 func validateChannelBaseURL(raw string) (string, error) {
@@ -115,6 +118,17 @@ func (cr *ChannelRequest) Validate() error {
 		cr.KeyStrategy = normalized // 应用标准化结果
 	}
 
+	// CCR 格式转换配置验证
+	cr.CCRTransformer = strings.TrimSpace(cr.CCRTransformer)
+	if cr.EnableCCR && cr.CCRTransformer == "" {
+		return fmt.Errorf("ccr_transformer cannot be empty when enable_ccr is true")
+	}
+	if cr.CCRTransformer != "" {
+		if _, err := ccr.GetTransformer(cr.CCRTransformer); err != nil {
+			return fmt.Errorf("invalid ccr_transformer: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -138,6 +152,8 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		ModelEntries:   normalizedModels,
 		Enabled:        cr.Enabled,
 		DailyCostLimit: cr.DailyCostLimit,
+		EnableCCR:      cr.EnableCCR,
+		CCRTransformer: strings.TrimSpace(cr.CCRTransformer),
 	}
 }
 

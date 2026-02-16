@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 )
 
 func floatNear(a, b, epsilon float64) bool {

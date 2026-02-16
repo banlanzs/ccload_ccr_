@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"testing"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 )
 
 // Test_HandleProxyError_Basic 基础错误处理测试(不依赖数据库)

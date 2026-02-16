@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	modelpkg "ccLoad/internal/model"
+	modelpkg "ccLoad+ccr/internal/model"
 )
 
 const (

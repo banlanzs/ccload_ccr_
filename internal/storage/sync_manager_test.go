@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/model"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 )
 
 // createTestStoreForSync 创建测试用的存储

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 // TestCacheIsolation_GetEnabledChannelsByModel 验证 GetEnabledChannelsByModel 返回深拷贝

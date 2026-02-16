@@ -78,7 +78,7 @@ func TestPrintBanner_NonTTY(t *testing.T) {
 		"Built By:",
 		"test-by",
 		"Repo:",
-		"ccLoad",
+		"ccLoad+ccr",
 	} {
 		if !strings.Contains(s, mustContain) {
 			t.Fatalf("banner output missing %q, got:\n%s", mustContain, s)

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	modelpkg "ccLoad/internal/model"
+	modelpkg "ccLoad+ccr/internal/model"
 )
 
 // SmoothWeightedRR 平滑加权轮询调度器

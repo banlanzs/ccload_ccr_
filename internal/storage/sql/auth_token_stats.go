@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // GetAuthTokenStatsInRange 查询指定时间范围内每个token的统计数据（从logs表聚合）

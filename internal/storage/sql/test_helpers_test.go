@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 func newTestStore(t testing.TB, dbFile string) storage.Store {

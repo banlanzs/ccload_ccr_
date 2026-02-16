@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/testutil"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/testutil"
 )
 
 // testContextKey 用于测试的 context key 类型

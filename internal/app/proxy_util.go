@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/ccr"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/bytedance/sonic"
 )
@@ -407,6 +408,16 @@ func (s *Server) prepareRequestBody(cfg *model.Config, reqCtx *proxyRequestConte
 			reqData["model"] = modelRaw
 			if modifiedBody, err := sonic.Marshal(reqData); err == nil {
 				bodyToSend = modifiedBody
+			}
+		}
+	}
+
+	// CCR 格式转换（请求转换）
+	if cfg.EnableCCR && cfg.CCRTransformer != "" {
+		transformer, err := ccr.GetTransformer(cfg.CCRTransformer)
+		if err == nil {
+			if transformedBody, err := transformer.TransformRequest(bodyToSend); err == nil {
+				bodyToSend = transformedBody
 			}
 		}
 	}

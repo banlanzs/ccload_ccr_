@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // ErrSettingNotFound 系统设置未找到错误（重导出自 model 包以保持兼容性）

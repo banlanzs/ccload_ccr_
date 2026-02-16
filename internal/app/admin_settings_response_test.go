@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestAdminAPI_ListSettings_ResponseShape(t *testing.T) {

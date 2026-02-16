@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 type channelRequestFieldCase struct {

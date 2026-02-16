@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // ChannelInfo 渠道基本信息（用于批量查询）

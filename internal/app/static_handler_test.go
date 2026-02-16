@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"ccLoad/internal/version"
+	"ccLoad+ccr/internal/version"
 
 	"github.com/gin-gonic/gin"
 )

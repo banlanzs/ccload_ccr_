@@ -5,10 +5,10 @@
 ```bash
 # 构建(必须 -tags go_json，注入版本号用于静态资源缓存)
 go build -tags go_json -ldflags "\
-  -X ccLoad/internal/version.Version=$(git describe --tags --always) \
-  -X ccLoad/internal/version.Commit=$(git rev-parse --short HEAD) \
-  -X 'ccLoad/internal/version.BuildTime=$(date '+%Y-%m-%d %H:%M:%S %z')' \
-  -X ccLoad/internal/version.BuiltBy=$(whoami)" -o ccload .
+  -X ccLoad+ccr/internal/version.Version=$(git describe --tags --always) \
+  -X ccLoad+ccr/internal/version.Commit=$(git rev-parse --short HEAD) \
+  -X 'ccLoad+ccr/internal/version.BuildTime=$(date '+%Y-%m-%d %H:%M:%S %z')' \
+  -X ccLoad+ccr/internal/version.BuiltBy=$(whoami)" -o ccload+ccr .
 
 # 测试(必须 -tags go_json)
 go test -tags go_json ./internal/... -v

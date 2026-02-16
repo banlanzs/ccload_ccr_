@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/storage"
 )
 
 func TestCooldown_ChannelCooldown(t *testing.T) {

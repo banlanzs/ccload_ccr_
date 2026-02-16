@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 // GetSetting 获取单个配置项

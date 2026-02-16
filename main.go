@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"ccLoad/internal/app"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
-	"ccLoad/internal/version"
+	"ccLoad+ccr/internal/app"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
+	"ccLoad+ccr/internal/version"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"

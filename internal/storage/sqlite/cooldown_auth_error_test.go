@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 )
 
 // TestAuthErrorInitialCooldown 验证401/403错误的初始冷却时间为5分钟

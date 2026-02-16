@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	modelpkg "ccLoad/internal/model"
+	modelpkg "ccLoad+ccr/internal/model"
 )
 
 func TestSmoothWeightedRR_ExactDistribution(t *testing.T) {

@@ -8,6 +8,11 @@ function showAddModal() {
   document.querySelector('input[name="channelType"][value="anthropic"]').checked = true;
   document.querySelector('input[name="keyStrategy"][value="sequential"]').checked = true;
 
+  // 重置 CCR 配置
+  document.getElementById('channelEnableCCR').checked = false;
+  document.getElementById('channelCCRTransformer').value = '';
+  document.getElementById('ccrTransformerGroup').style.display = 'none';
+
   redirectTableData = [];
   selectedModelIndices.clear();
   currentModelFilter = '';
@@ -73,6 +78,15 @@ async function editChannel(id) {
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
   document.getElementById('channelEnabled').checked = channel.enabled;
 
+  // CCR 配置
+  document.getElementById('channelEnableCCR').checked = channel.enable_ccr || false;
+  document.getElementById('channelCCRTransformer').value = channel.ccr_transformer || '';
+  // 更新 CCR 转换器下拉框显示状态
+  const ccrTransformerGroup = document.getElementById('ccrTransformerGroup');
+  if (ccrTransformerGroup) {
+    ccrTransformerGroup.style.display = (channel.enable_ccr ? 'block' : 'none');
+  }
+
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
     model: m.model || '',
@@ -118,6 +132,15 @@ async function saveChannel(event) {
   const channelType = document.querySelector('input[name="channelType"]:checked')?.value || 'anthropic';
   const keyStrategy = document.querySelector('input[name="keyStrategy"]:checked')?.value || 'sequential';
 
+  const enableCCR = document.getElementById('channelEnableCCR').checked;
+  const ccrTransformer = document.getElementById('channelCCRTransformer').value;
+
+  // CCR 配置验证
+  if (enableCCR && !ccrTransformer) {
+    if (window.showError) window.showError('启用 CCR 时必须选择转换器类型');
+    return;
+  }
+
   const formData = {
     name: document.getElementById('channelName').value.trim(),
     url: document.getElementById('channelUrl').value.trim(),
@@ -127,7 +150,9 @@ async function saveChannel(event) {
     priority: parseInt(document.getElementById('channelPriority').value) || 0,
     daily_cost_limit: parseFloat(document.getElementById('channelDailyCostLimit').value) || 0,
     models: models,
-    enabled: document.getElementById('channelEnabled').checked
+    enabled: document.getElementById('channelEnabled').checked,
+    enable_ccr: enableCCR,
+    ccr_transformer: ccrTransformer
   };
 
   if (!formData.name || !formData.url || !formData.api_key || formData.models.length === 0) {
@@ -948,3 +973,16 @@ function addCommonModels() {
     window.showSuccess(window.t('channels.addedCommonModels', { count: addedCount }));
   }
 }
+
+// CCR 复选框切换事件监听
+document.addEventListener('DOMContentLoaded', function() {
+  const enableCCRCheckbox = document.getElementById('channelEnableCCR');
+  if (enableCCRCheckbox) {
+    enableCCRCheckbox.addEventListener('change', function() {
+      const ccrTransformerGroup = document.getElementById('ccrTransformerGroup');
+      if (ccrTransformerGroup) {
+        ccrTransformerGroup.style.display = this.checked ? 'block' : 'none';
+      }
+    });
+  }
+});

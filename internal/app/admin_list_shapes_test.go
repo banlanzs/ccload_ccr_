@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestAdminAPI_ChannelKeys_ResponseShape_Empty(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/util"
-	"ccLoad/internal/version"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/util"
+	"ccLoad+ccr/internal/version"
 )
 
 func TestAdminStats_PublicAndCooldownEndpoints(t *testing.T) {

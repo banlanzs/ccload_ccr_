@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
-	sqlstore "ccLoad/internal/storage/sql"
+	"ccLoad+ccr/internal/model"
+	sqlstore "ccLoad+ccr/internal/storage/sql"
 )
 
 func TestUpsertAuthTokenAllFields_SQLite(t *testing.T) {

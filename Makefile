@@ -1,12 +1,12 @@
 # ccLoad Makefile - macOS Service Management
 
 # 变量定义
-SERVICE_NAME = com.ccload.service
+SERVICE_NAME = com.ccload+ccr.service
 PLIST_TEMPLATE = $(SERVICE_NAME).plist.template
 PLIST_FILE = $(SERVICE_NAME).plist
 LAUNCH_AGENTS_DIR = $(HOME)/Library/LaunchAgents
 TARGET_PLIST = $(LAUNCH_AGENTS_DIR)/$(PLIST_FILE)
-BINARY_NAME = ccload
+BINARY_NAME = ccload+ccr
 LOG_DIR = logs
 PROJECT_DIR = $(shell pwd)
 GOTAGS ?= go_json
@@ -16,7 +16,7 @@ VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date '+%Y-%m-%d %H:%M:%S %z')
 BUILT_BY ?= $(shell whoami)
-VERSION_PKG = ccLoad/internal/version
+VERSION_PKG = ccLoad+ccr/internal/version
 LDFLAGS = -s -w \
 	-X $(VERSION_PKG).Version=$(VERSION) \
 	-X $(VERSION_PKG).Commit=$(COMMIT) \
@@ -27,7 +27,7 @@ LDFLAGS = -s -w \
 
 # 默认目标
 help:
-	@echo "ccLoad 服务管理 Makefile"
+	@echo "ccLoad+ccr 服务管理 Makefile"
 	@echo ""
 	@echo "可用命令:"
 	@echo "  build             - 构建二进制文件"
@@ -49,7 +49,7 @@ build:
 	@echo "构建完成: $(BINARY_NAME)"
 
 # 构建 Docker 镜像（自动注入版本信息）
-DOCKER_IMAGE ?= ccload
+DOCKER_IMAGE ?= ccload+ccr
 DOCKER_TAG ?= $(VERSION)
 docker-build:
 	@echo "构建 Docker 镜像 $(DOCKER_IMAGE):$(DOCKER_TAG)..."

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestAuthToken_MaskToken(t *testing.T) {

@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"ccLoad/internal/config"
-	"ccLoad/internal/cooldown"
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
-	"ccLoad/internal/util"
+	"ccLoad+ccr/internal/config"
+	"ccLoad+ccr/internal/cooldown"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
+	"ccLoad+ccr/internal/util"
 
 	"github.com/gin-gonic/gin"
 )

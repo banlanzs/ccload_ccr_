@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/testutil"
+	"ccLoad+ccr/internal/testutil"
 )
 
 func TestSetupTestStore_CreatesValidStore(t *testing.T) {

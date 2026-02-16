@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestWriteResponseWithHeaders_PreservesContentType(t *testing.T) {

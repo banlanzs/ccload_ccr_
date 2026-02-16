@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestAPIKey_CreateAndGet(t *testing.T) {

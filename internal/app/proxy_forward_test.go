@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/model"
 )
 
 func runHandleSuccessResponse(t *testing.T, body string, headers http.Header, isStreaming bool, channelType string) (*fwResult, string) {

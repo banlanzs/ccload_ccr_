@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"ccLoad/internal/storage/schema"
+	"ccLoad+ccr/internal/storage/schema"
 
 	_ "modernc.org/sqlite"
 )

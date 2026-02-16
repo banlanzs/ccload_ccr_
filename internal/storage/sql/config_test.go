@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ccLoad/internal/model"
-	"ccLoad/internal/storage"
+	"ccLoad+ccr/internal/model"
+	"ccLoad+ccr/internal/storage"
 )
 
 func TestConfig_CreateAndGet(t *testing.T) {

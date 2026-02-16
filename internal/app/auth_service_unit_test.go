@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"ccLoad/internal/config"
-	"ccLoad/internal/model"
+	"ccLoad+ccr/internal/config"
+	"ccLoad+ccr/internal/model"
 )
 
 func TestAuthService_GenerateToken_LengthAndHex(t *testing.T) {
