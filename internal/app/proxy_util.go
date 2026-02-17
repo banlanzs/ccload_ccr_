@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	neturl "net/url"
 	"strconv"
@@ -412,13 +413,73 @@ func (s *Server) prepareRequestBody(cfg *model.Config, reqCtx *proxyRequestConte
 		}
 	}
 
-	// CCR 格式转换（请求转换）
+	// 新格式转换系统（支持三种格式互转：openai/anthropic/gemini）
+	// 与 legacy CCR transformer 共存，优先级更高
+	// 支持显式配置或自动检测
+	if cfg.EnableConversion {
+		var srcFormat, dstFormat ccr.ProviderFormat
+
+		// 确定源格式：显式配置 > 自动检测
+		if cfg.ConversionSourceFormat != "" {
+			srcFormat = ccr.ParseProviderFormat(cfg.ConversionSourceFormat)
+			log.Printf("[INFO] Channel %s (ID=%d): Using configured source format: %s", cfg.Name, cfg.ID, srcFormat)
+		} else {
+			srcFormat = ccr.DetectFormatFromPayload(bodyToSend)
+			log.Printf("[INFO] Channel %s (ID=%d): Auto-detected source format: %s", cfg.Name, cfg.ID, srcFormat)
+		}
+
+		// 确定目标格式：显式配置 > 渠道类型推断
+		if cfg.ConversionTargetFormat != "" {
+			dstFormat = ccr.ParseProviderFormat(cfg.ConversionTargetFormat)
+			log.Printf("[INFO] Channel %s (ID=%d): Using configured target format: %s", cfg.Name, cfg.ID, dstFormat)
+		} else {
+			dstFormat = ccr.InferFormatFromChannelType(cfg.ChannelType)
+			log.Printf("[INFO] Channel %s (ID=%d): Inferred target format from channel_type=%s: %s", cfg.Name, cfg.ID, cfg.ChannelType, dstFormat)
+		}
+
+		// 检查是否需要转换
+		if srcFormat != "" && dstFormat != "" && srcFormat != dstFormat {
+			log.Printf("[CONVERSION] Channel %s (ID=%d): Attempting conversion %s -> %s (new system)",
+				cfg.Name, cfg.ID, srcFormat, dstFormat)
+
+			// 执行转换
+			if converted, err := s.conversionRouter.Route(bodyToSend, string(srcFormat), string(dstFormat), false); err == nil {
+				originalSize := len(bodyToSend)
+				bodyToSend = converted
+				log.Printf("[SUCCESS] Channel %s (ID=%d): Conversion succeeded (new system), size: %d -> %d bytes",
+					cfg.Name, cfg.ID, originalSize, len(converted))
+			} else {
+				// 转换失败时记录日志并回退到原始请求体
+				log.Printf("[WARN] Channel %s (ID=%d): Format conversion failed (new system, %s->%s): %T, using original payload",
+					cfg.Name, cfg.ID, srcFormat, dstFormat, err)
+			}
+		} else if srcFormat == "" {
+			log.Printf("[WARN] Channel %s (ID=%d): Unable to detect source format, skipping conversion", cfg.Name, cfg.ID)
+		} else if srcFormat == dstFormat {
+			log.Printf("[INFO] Channel %s (ID=%d): Source and target formats are the same (%s), skipping conversion",
+				cfg.Name, cfg.ID, srcFormat)
+		}
+	}
+
+	// CCR 格式转换（Legacy，请求转换）
 	if cfg.EnableCCR && cfg.CCRTransformer != "" {
+		log.Printf("[CONVERSION] Channel %s (ID=%d): Attempting legacy CCR conversion: %s",
+			cfg.Name, cfg.ID, cfg.CCRTransformer)
+
 		transformer, err := ccr.GetTransformer(cfg.CCRTransformer)
 		if err == nil {
 			if transformedBody, err := transformer.TransformRequest(bodyToSend); err == nil {
+				originalSize := len(bodyToSend)
 				bodyToSend = transformedBody
+				log.Printf("[SUCCESS] Channel %s (ID=%d): Legacy CCR conversion succeeded (%s), size: %d -> %d bytes",
+					cfg.Name, cfg.ID, cfg.CCRTransformer, originalSize, len(transformedBody))
+			} else {
+				log.Printf("[WARN] Channel %s (ID=%d): Legacy CCR conversion failed (%s): %T",
+					cfg.Name, cfg.ID, cfg.CCRTransformer, err)
 			}
+		} else {
+			log.Printf("[ERROR] Channel %s (ID=%d): Failed to get legacy transformer %q: %T",
+				cfg.Name, cfg.ID, cfg.CCRTransformer, err)
 		}
 	}
 

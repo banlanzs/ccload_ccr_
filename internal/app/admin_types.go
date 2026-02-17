@@ -23,10 +23,14 @@ type ChannelRequest struct {
 	URL            string             `json:"url" binding:"required,url"`
 	Priority       int                `json:"priority"`
 	Models         []model.ModelEntry `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
-	Enabled        bool               `json:"enabled"`
-	DailyCostLimit float64            `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
-	EnableCCR      bool               `json:"enable_ccr"`       // 是否启用 CCR 格式转换
-	CCRTransformer string             `json:"ccr_transformer"`  // 转换器类型: "openai_to_claude" | "claude_to_openai"
+	Enabled        bool   `json:"enabled"`
+	DailyCostLimit float64 `json:"daily_cost_limit"` // 每日成本限额（美元），0表示无限制
+	EnableCCR      bool   `json:"enable_ccr"`       // 是否启用 CCR 格式转换
+	CCRTransformer string `json:"ccr_transformer"`  // 转换器类型: "openai_to_claude" | "claude_to_openai"
+	// 新格式转换配置（支持三种格式互转）
+	EnableConversion       bool   `json:"enable_conversion"`                  // 是否启用新格式转换系统
+	ConversionSourceFormat string `json:"conversion_source_format,omitempty"` // 源格式: "openai" | "anthropic" | "gemini"
+	ConversionTargetFormat string `json:"conversion_target_format,omitempty"` // 目标格式: "openai" | "anthropic" | "gemini"
 }
 
 func validateChannelBaseURL(raw string) (string, error) {
@@ -154,6 +158,10 @@ func (cr *ChannelRequest) ToConfig() *model.Config {
 		DailyCostLimit: cr.DailyCostLimit,
 		EnableCCR:      cr.EnableCCR,
 		CCRTransformer: strings.TrimSpace(cr.CCRTransformer),
+		// 新格式转换配置
+		EnableConversion:       cr.EnableConversion,
+		ConversionSourceFormat: strings.TrimSpace(cr.ConversionSourceFormat),
+		ConversionTargetFormat: strings.TrimSpace(cr.ConversionTargetFormat),
 	}
 }
 

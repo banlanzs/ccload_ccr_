@@ -346,7 +346,7 @@
         </div>
         <!-- CCR 格式转换配置 -->
         <div class="form-group">
-          <details>
+          <details id="advancedSettingsDetails">
             <summary class="form-label" style="cursor: pointer; user-select: none;">
               <span data-i18n="channels.advancedSettings">高级设置</span>
             </summary>
@@ -362,6 +362,34 @@
                   <option value="openai_to_claude">OpenAI → Claude</option>
                   <option value="claude_to_openai">Claude → OpenAI</option>
                 </select>
+              </div>
+
+              <!-- 新格式转换系统 -->
+              <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--neutral-200);">
+                <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                  <input type="checkbox" id="channelEnableConversion">
+                  <span>启用格式转换（支持 OpenAI/Anthropic/Gemini 互转）</span>
+                </label>
+                <div id="conversionConfigGroup" style="display: none; margin-left: 24px;">
+                  <div style="margin-bottom: 12px;">
+                    <label class="form-label" for="channelConversionSourceFormat">源格式（空=自动检测）</label>
+                    <select id="channelConversionSourceFormat" class="form-input">
+                      <option value="">自动检测</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic (Claude)</option>
+                      <option value="gemini">Gemini</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label" for="channelConversionTargetFormat">目标格式（空=根据渠道类型推断）</label>
+                    <select id="channelConversionTargetFormat" class="form-input">
+                      <option value="">自动推断</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic (Claude)</option>
+                      <option value="gemini">Gemini</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
           </details>

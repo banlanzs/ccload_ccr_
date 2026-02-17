@@ -81,6 +81,10 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsCCRColumns(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels ccr columns: %w", err)
 			}
+			// 增量迁移：确保channels表有新格式转换字段（2026-02新增）
+			if err := ensureChannelsConversionColumns(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels conversion columns: %w", err)
+			}
 		}
 
 		// 增量迁移：修复 api_keys.api_key 历史长度漂移（旧版可能为 VARCHAR(64)）
@@ -1166,5 +1170,22 @@ func ensureChannelsCCRColumns(ctx context.Context, db *sql.DB, dialect Dialect) 
 	return ensureSQLiteColumns(ctx, db, "channels", []sqliteColumnDef{
 		{name: "enable_ccr", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "ccr_transformer", definition: "TEXT NOT NULL DEFAULT ''"},
+	})
+}
+
+// ensureChannelsConversionColumns 确保channels表有新格式转换字段（2026-02新增）
+func ensureChannelsConversionColumns(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "channels", []mysqlColumnDef{
+			{name: "enable_conversion", definition: "TINYINT NOT NULL DEFAULT 0"},
+			{name: "conversion_source_format", definition: "VARCHAR(32) NOT NULL DEFAULT ''"},
+			{name: "conversion_target_format", definition: "VARCHAR(32) NOT NULL DEFAULT ''"},
+		})
+	}
+
+	return ensureSQLiteColumns(ctx, db, "channels", []sqliteColumnDef{
+		{name: "enable_conversion", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "conversion_source_format", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "conversion_target_format", definition: "TEXT NOT NULL DEFAULT ''"},
 	})
 }

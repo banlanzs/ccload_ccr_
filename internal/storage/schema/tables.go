@@ -14,6 +14,9 @@ func DefineChannelsTable() *TableBuilder {
 		Column("daily_cost_limit DOUBLE NOT NULL DEFAULT 0").
 		Column("enable_ccr TINYINT NOT NULL DEFAULT 0").
 		Column("ccr_transformer VARCHAR(64) NOT NULL DEFAULT ''").
+		Column("enable_conversion TINYINT NOT NULL DEFAULT 0").
+		Column("conversion_source_format VARCHAR(32) NOT NULL DEFAULT ''").
+		Column("conversion_target_format VARCHAR(32) NOT NULL DEFAULT ''").
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Index("idx_channels_enabled", "enabled").

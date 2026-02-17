@@ -13,6 +13,12 @@ function showAddModal() {
   document.getElementById('channelCCRTransformer').value = '';
   document.getElementById('ccrTransformerGroup').style.display = 'none';
 
+  // 重置新格式转换配置
+  document.getElementById('channelEnableConversion').checked = false;
+  document.getElementById('channelConversionSourceFormat').value = '';
+  document.getElementById('channelConversionTargetFormat').value = '';
+  document.getElementById('conversionConfigGroup').style.display = 'none';
+
   redirectTableData = [];
   selectedModelIndices.clear();
   currentModelFilter = '';
@@ -78,6 +84,13 @@ async function editChannel(id) {
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
   document.getElementById('channelEnabled').checked = channel.enabled;
 
+  // 如果启用了 CCR 或格式转换，自动展开高级设置
+  const hasAdvancedConfig = (channel.enable_ccr || channel.enable_conversion);
+  const advancedDetails = document.getElementById('advancedSettingsDetails');
+  if (advancedDetails) {
+    advancedDetails.open = hasAdvancedConfig;
+  }
+
   // CCR 配置
   document.getElementById('channelEnableCCR').checked = channel.enable_ccr || false;
   document.getElementById('channelCCRTransformer').value = channel.ccr_transformer || '';
@@ -85,6 +98,15 @@ async function editChannel(id) {
   const ccrTransformerGroup = document.getElementById('ccrTransformerGroup');
   if (ccrTransformerGroup) {
     ccrTransformerGroup.style.display = (channel.enable_ccr ? 'block' : 'none');
+  }
+
+  // 新格式转换配置
+  document.getElementById('channelEnableConversion').checked = channel.enable_conversion || false;
+  document.getElementById('channelConversionSourceFormat').value = channel.conversion_source_format || '';
+  document.getElementById('channelConversionTargetFormat').value = channel.conversion_target_format || '';
+  const conversionConfigGroup = document.getElementById('conversionConfigGroup');
+  if (conversionConfigGroup) {
+    conversionConfigGroup.style.display = (channel.enable_conversion ? 'block' : 'none');
   }
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
@@ -141,6 +163,11 @@ async function saveChannel(event) {
     return;
   }
 
+  // 新格式转换配置
+  const enableConversion = document.getElementById('channelEnableConversion').checked;
+  const conversionSourceFormat = document.getElementById('channelConversionSourceFormat').value;
+  const conversionTargetFormat = document.getElementById('channelConversionTargetFormat').value;
+
   const formData = {
     name: document.getElementById('channelName').value.trim(),
     url: document.getElementById('channelUrl').value.trim(),
@@ -152,7 +179,10 @@ async function saveChannel(event) {
     models: models,
     enabled: document.getElementById('channelEnabled').checked,
     enable_ccr: enableCCR,
-    ccr_transformer: ccrTransformer
+    ccr_transformer: ccrTransformer,
+    enable_conversion: enableConversion,
+    conversion_source_format: conversionSourceFormat,
+    conversion_target_format: conversionTargetFormat
   };
 
   if (!formData.name || !formData.url || !formData.api_key || formData.models.length === 0) {
@@ -288,6 +318,30 @@ async function copyChannel(id, name) {
   document.getElementById('channelPriority').value = channel.priority;
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
   document.getElementById('channelEnabled').checked = true;
+
+  // 如果启用了 CCR 或格式转换，自动展开高级设置
+  const hasAdvancedConfig = (channel.enable_ccr || channel.enable_conversion);
+  const advancedDetails = document.getElementById('advancedSettingsDetails');
+  if (advancedDetails) {
+    advancedDetails.open = hasAdvancedConfig;
+  }
+
+  // CCR 配置
+  document.getElementById('channelEnableCCR').checked = channel.enable_ccr || false;
+  document.getElementById('channelCCRTransformer').value = channel.ccr_transformer || '';
+  const ccrTransformerGroup = document.getElementById('ccrTransformerGroup');
+  if (ccrTransformerGroup) {
+    ccrTransformerGroup.style.display = (channel.enable_ccr ? 'block' : 'none');
+  }
+
+  // 新格式转换配置
+  document.getElementById('channelEnableConversion').checked = channel.enable_conversion || false;
+  document.getElementById('channelConversionSourceFormat').value = channel.conversion_source_format || '';
+  document.getElementById('channelConversionTargetFormat').value = channel.conversion_target_format || '';
+  const conversionConfigGroup = document.getElementById('conversionConfigGroup');
+  if (conversionConfigGroup) {
+    conversionConfigGroup.style.display = (channel.enable_conversion ? 'block' : 'none');
+  }
 
   // 加载模型配置（新格式：models是 {model, redirect_model} 数组）
   redirectTableData = (channel.models || []).map(m => ({
@@ -982,6 +1036,17 @@ document.addEventListener('DOMContentLoaded', function() {
       const ccrTransformerGroup = document.getElementById('ccrTransformerGroup');
       if (ccrTransformerGroup) {
         ccrTransformerGroup.style.display = this.checked ? 'block' : 'none';
+      }
+    });
+  }
+
+  // 新格式转换复选框切换事件监听
+  const enableConversionCheckbox = document.getElementById('channelEnableConversion');
+  if (enableConversionCheckbox) {
+    enableConversionCheckbox.addEventListener('change', function() {
+      const conversionConfigGroup = document.getElementById('conversionConfigGroup');
+      if (conversionConfigGroup) {
+        conversionConfigGroup.style.display = this.checked ? 'block' : 'none';
       }
     });
   }

@@ -18,6 +18,7 @@ import (
 	"ccLoad+ccr/internal/model"
 	"ccLoad+ccr/internal/storage"
 	"ccLoad+ccr/internal/util"
+	"ccLoad+ccr/internal/ccr"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,8 +43,9 @@ type Server struct {
 	costCache       *CostCache            // 渠道每日成本缓存
 	statsCache      *StatsCache           // 统计结果缓存层
 	channelBalancer *SmoothWeightedRR     // 渠道负载均衡器（平滑加权轮询）
-	client          *http.Client          // HTTP客户端
-	activeRequests  *activeRequestManager // 进行中请求（内存状态，不持久化）
+	client           *http.Client          // HTTP客户端
+	activeRequests   *activeRequestManager // 进行中请求（内存状态，不持久化）
+	conversionRouter *ccr.ConversionRouter // 格式转换路由器（与legacy transformer共存）
 
 	// 异步统计（有界队列，避免每请求起goroutine）
 	tokenStatsCh        chan tokenStatsUpdate
@@ -172,6 +174,9 @@ func NewServer(store storage.Store) *Server {
 
 		activeRequests: newActiveRequestManager(),
 	}
+
+	// 初始化格式转换路由器（与legacy transformer共存）
+	s.conversionRouter = ccr.NewConversionRouter(nil) // nil使用默认registry
 
 	// 初始化高性能缓存层（60秒TTL，避免数据库性能杀手查询）
 	s.channelCache = storage.NewChannelCache(store, 60*time.Second)

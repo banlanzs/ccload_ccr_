@@ -107,7 +107,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	Scan(...any) error
 }) (*model.Config, error) {
 	var c model.Config
-	var enabledInt, enableCCRInt int
+	var enabledInt, enableCCRInt, enableConversionInt int
 	var createdAtRaw, updatedAtRaw any // 使用any接受任意类型（兼容字符串、整数或RFC3339）
 
 	// 扫描key_count字段（从JOIN查询获取）
@@ -115,13 +115,16 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	if err := scanner.Scan(&c.ID, &c.Name, &c.URL, &c.Priority,
 		&c.ChannelType, &enabledInt,
 		&c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit,
-		&enableCCRInt, &c.CCRTransformer, &c.KeyCount,
+		&enableCCRInt, &c.CCRTransformer,
+		&enableConversionInt, &c.ConversionSourceFormat, &c.ConversionTargetFormat,
+		&c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
 		return nil, err
 	}
 
 	c.Enabled = enabledInt != 0
 	c.EnableCCR = enableCCRInt != 0
+	c.EnableConversion = enableConversionInt != 0
 
 	// 转换时间戳（支持不同数据库）
 	now := time.Now()
