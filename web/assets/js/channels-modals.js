@@ -901,6 +901,11 @@ async function fetchModelsFromAPI() {
     .map(key => (key || '').trim())
     .filter(Boolean)[0];
 
+  // 读取格式转换配置
+  const enableConversion = document.getElementById('channelEnableConversion')?.checked || false;
+  const conversionSourceFormat = document.getElementById('channelConversionSourceFormat')?.value || '';
+  const conversionTargetFormat = document.getElementById('channelConversionTargetFormat')?.value || '';
+
   if (!channelUrl) {
     if (window.showError) {
       window.showError(window.t('channels.fillApiUrlFirst'));
@@ -926,7 +931,10 @@ async function fetchModelsFromAPI() {
     body: JSON.stringify({
       channel_type: channelType,
       url: channelUrl,
-      api_key: firstValidKey
+      api_key: firstValidKey,
+      enable_conversion: enableConversion,
+      conversion_source_format: conversionSourceFormat,
+      conversion_target_format: conversionTargetFormat
     })
   };
 

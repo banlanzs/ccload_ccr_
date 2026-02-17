@@ -22,6 +22,11 @@ type FetchModelsRequest struct {
 	ChannelType string `json:"channel_type" binding:"required"`
 	URL         string `json:"url" binding:"required"`
 	APIKey      string `json:"api_key" binding:"required"`
+
+	// 格式转换配置（可选）
+	EnableConversion       bool   `json:"enable_conversion"`
+	ConversionSourceFormat string `json:"conversion_source_format,omitempty"`
+	ConversionTargetFormat string `json:"conversion_target_format,omitempty"`
 }
 
 // FetchModelsResponse 获取模型列表响应
@@ -75,7 +80,17 @@ func (s *Server) HandleFetchModels(c *gin.Context) {
 	if channelType == "" {
 		channelType = channel.ChannelType
 	}
-	response, err := fetchModelsForConfig(c.Request.Context(), channelType, channel.URL, apiKey)
+
+	// 从渠道配置读取格式转换配置
+	response, err := fetchModelsForConfig(
+		c.Request.Context(),
+		channelType,
+		channel.URL,
+		apiKey,
+		channel.EnableConversion,
+		channel.ConversionSourceFormat,
+		channel.ConversionTargetFormat,
+	)
 	if err != nil {
 		// [INFO] 修复：统一返回200，通过success字段区分成功/失败（上游错误是预期内的）
 		RespondErrorMsg(c, http.StatusOK, err.Error())
@@ -97,12 +112,23 @@ func (s *Server) HandleFetchModelsPreview(c *gin.Context) {
 	req.ChannelType = strings.TrimSpace(req.ChannelType)
 	req.URL = strings.TrimSpace(req.URL)
 	req.APIKey = strings.TrimSpace(req.APIKey)
+	req.ConversionSourceFormat = strings.TrimSpace(req.ConversionSourceFormat)
+	req.ConversionTargetFormat = strings.TrimSpace(req.ConversionTargetFormat)
+
 	if req.ChannelType == "" || req.URL == "" || req.APIKey == "" {
 		RespondErrorMsg(c, http.StatusBadRequest, "channel_type、url、api_key为必填字段")
 		return
 	}
 
-	response, err := fetchModelsForConfig(c.Request.Context(), req.ChannelType, req.URL, req.APIKey)
+	response, err := fetchModelsForConfig(
+		c.Request.Context(),
+		req.ChannelType,
+		req.URL,
+		req.APIKey,
+		req.EnableConversion,
+		req.ConversionSourceFormat,
+		req.ConversionTargetFormat,
+	)
 	if err != nil {
 		// [INFO] 修复：统一返回200，通过success字段区分成功/失败（上游错误是预期内的）
 		RespondErrorMsg(c, http.StatusOK, err.Error())
@@ -111,9 +137,31 @@ func (s *Server) HandleFetchModelsPreview(c *gin.Context) {
 	RespondJSON(c, http.StatusOK, response)
 }
 
-func fetchModelsForConfig(ctx context.Context, channelType, channelURL, apiKey string) (*FetchModelsResponse, error) {
-	normalizedType := util.NormalizeChannelType(channelType)
-	source := determineSource(channelType)
+// resolveEffectiveFormat 解析用于模型发现的有效协议格式
+// 规则：
+// 1. 如果启用了格式转换且源格式有效，使用源格式
+// 2. 否则使用渠道类型
+func resolveEffectiveFormat(channelType string, enableConversion bool, sourceFormat string) string {
+	if enableConversion && sourceFormat != "" {
+		normalized := util.NormalizeChannelType(sourceFormat)
+		if normalized != "" {
+			return sourceFormat
+		}
+	}
+	return channelType
+}
+
+func fetchModelsForConfig(
+	ctx context.Context,
+	channelType, channelURL, apiKey string,
+	enableConversion bool,
+	sourceFormat, targetFormat string,
+) (*FetchModelsResponse, error) {
+	// 解析有效格式（用于选择 fetcher）
+	effectiveFormat := resolveEffectiveFormat(channelType, enableConversion, sourceFormat)
+
+	normalizedType := util.NormalizeChannelType(effectiveFormat)
+	source := determineSource(effectiveFormat)
 
 	var (
 		modelNames []string
@@ -121,7 +169,20 @@ func fetchModelsForConfig(ctx context.Context, channelType, channelURL, apiKey s
 		err        error
 	)
 
-	// Anthropic/Codex等官方无开放接口的渠道，直接返回预设模型列表
+	// 配置校验：如果启用转换，source 和 target 必须有效
+	if enableConversion {
+		if sourceFormat == "" || targetFormat == "" {
+			return nil, fmt.Errorf("启用格式转换时，源格式和目标格式不能为空")
+		}
+		if util.NormalizeChannelType(sourceFormat) == "" {
+			return nil, fmt.Errorf("无效的源格式: %s", sourceFormat)
+		}
+		if util.NormalizeChannelType(targetFormat) == "" {
+			return nil, fmt.Errorf("无效的目标格式: %s", targetFormat)
+		}
+	}
+
+	// 预定义模型列表
 	if source == "predefined" {
 		modelNames = util.PredefinedModels(normalizedType)
 		if len(modelNames) == 0 {
@@ -132,24 +193,25 @@ func fetchModelsForConfig(ctx context.Context, channelType, channelURL, apiKey s
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		fetcher := util.NewModelsFetcher(channelType)
+		// 使用有效格式选择 fetcher
+		fetcher := util.NewModelsFetcher(effectiveFormat)
 		fetcherStr = fmt.Sprintf("%T", fetcher)
 
 		modelNames, err = fetcher.FetchModels(ctx, channelURL, apiKey)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"获取模型列表失败(渠道类型:%s, 规范化类型:%s, 数据来源:%s): %w",
-				channelType, normalizedType, source, err,
+				"获取模型列表失败(渠道类型:%s, 有效格式:%s, 规范化类型:%s, 数据来源:%s): %w",
+				channelType, effectiveFormat, normalizedType, source, err,
 			)
 		}
 	}
 
-	// 转换为 ModelEntry 格式，填充 RedirectModel 为 Model（方便前端编辑）
+	// 转换为 ModelEntry 格式
 	models := make([]model.ModelEntry, len(modelNames))
 	for i, name := range modelNames {
 		models[i] = model.ModelEntry{
 			Model:         name,
-			RedirectModel: name, // 填充为请求模型名称
+			RedirectModel: name,
 		}
 	}
 
