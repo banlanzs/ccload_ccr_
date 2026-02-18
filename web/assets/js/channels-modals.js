@@ -150,6 +150,26 @@ async function saveChannel(event) {
       model: r.model.trim(),
       redirect_model: (r.redirect_model || '').trim()
     }));
+  const seenModels = new Set();
+  const duplicateModels = [];
+  for (const entry of models) {
+    const modelKey = entry.model.toLowerCase();
+    if (seenModels.has(modelKey)) {
+      duplicateModels.push(entry.model);
+      continue;
+    }
+    seenModels.add(modelKey);
+  }
+  if (duplicateModels.length > 0) {
+    const uniqueDuplicates = [...new Set(duplicateModels)];
+    const msg = window.t('channels.duplicateModelsNotAllowed', { models: uniqueDuplicates.join(', ') });
+    if (window.showError) {
+      window.showError(msg);
+    } else {
+      alert(msg);
+    }
+    return;
+  }
 
   const channelType = document.querySelector('input[name="channelType"]:checked')?.value || 'anthropic';
   const keyStrategy = document.querySelector('input[name="keyStrategy"]:checked')?.value || 'sequential';
@@ -274,6 +294,247 @@ async function toggleChannel(id, enabled) {
     console.error('Toggle failed', e);
     if (window.showError) window.showError(window.t('common.failed'));
   }
+}
+
+function syncSelectedChannelsWithLoadedChannels() {
+  const loadedIDs = new Set((channels || [])
+    .map(ch => normalizeSelectedChannelID(ch.id))
+    .filter(Boolean));
+  let changed = false;
+  selectedChannelIds.forEach((id) => {
+    if (!loadedIDs.has(id)) {
+      selectedChannelIds.delete(id);
+      changed = true;
+    }
+  });
+  if (changed) {
+    updateBatchChannelSelectionUI();
+  }
+}
+
+function getSelectedChannelIDs() {
+  return Array.from(selectedChannelIds)
+    .map(id => Number(id))
+    .filter(id => Number.isFinite(id) && id > 0);
+}
+
+function getVisibleChannelsForSelection() {
+  return Array.isArray(filteredChannels) ? filteredChannels : (channels || []);
+}
+
+function renderBatchSummary(selectedCount) {
+  const marker = '__count_marker__';
+  const raw = String(window.t('channels.batchSelectedCount', { count: marker }));
+  const text = raw.includes(marker)
+    ? raw.replace(marker, '')
+    : String(window.t('channels.batchSelectedCount', { count: selectedCount }));
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (/[\u4e00-\u9fff]/.test(compact)) {
+    return compact.replace(/\s+/g, '');
+  }
+  return compact;
+}
+
+function updateBatchChannelSelectionUI() {
+  const selectedCount = getSelectedChannelIDs().length;
+  const hasAnySelection = selectedCount > 0;
+  const visibleChannels = getVisibleChannelsForSelection();
+  const visibleCount = visibleChannels.length;
+  let visibleSelectedCount = 0;
+  visibleChannels.forEach((ch) => {
+    if (selectedChannelIds.has(normalizeSelectedChannelID(ch.id))) {
+      visibleSelectedCount++;
+    }
+  });
+
+  const floatingMenu = document.getElementById('batchFloatingMenu');
+  if (floatingMenu) {
+    const visible = selectedCount > 0;
+    floatingMenu.classList.toggle('is-visible', visible);
+    floatingMenu.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
+  const summary = document.getElementById('selectedChannelsSummary');
+  if (summary) {
+    summary.textContent = renderBatchSummary(selectedCount);
+  }
+
+  const countBadge = document.getElementById('selectedChannelsCountBadge');
+  if (countBadge) {
+    countBadge.textContent = String(selectedCount);
+  }
+
+  const closeBtn = document.getElementById('batchFloatingMenuCloseBtn');
+  if (closeBtn) closeBtn.disabled = selectedCount === 0;
+
+  const selectionToggle = document.getElementById('visibleSelectionToggle');
+  const selectionCheckbox = document.getElementById('visibleSelectionCheckbox');
+  const selectionText = document.getElementById('visibleSelectionToggleText');
+  const selectionLabel = window.t(hasAnySelection ? 'channels.batchInvertVisible' : 'channels.batchSelectVisible');
+
+  if (selectionText) {
+    selectionText.textContent = selectionLabel;
+  }
+  if (selectionToggle) {
+    selectionToggle.classList.toggle('is-disabled', visibleCount === 0);
+    selectionToggle.title = selectionLabel;
+  }
+  if (selectionCheckbox) {
+    selectionCheckbox.disabled = visibleCount === 0;
+    selectionCheckbox.checked = visibleCount > 0 && visibleSelectedCount === visibleCount;
+    selectionCheckbox.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < visibleCount;
+  }
+
+  const actionBtnIDs = [
+    'batchEnableChannelsBtn',
+    'batchDisableChannelsBtn',
+    'batchRefreshMergeBtn',
+    'batchRefreshReplaceBtn'
+  ];
+  actionBtnIDs.forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = selectedCount === 0;
+  });
+}
+
+function selectAllVisibleChannels() {
+  const visibleChannels = getVisibleChannelsForSelection();
+
+  if (visibleChannels.length === 0) {
+    return;
+  }
+
+  visibleChannels.forEach((ch) => {
+    const channelID = normalizeSelectedChannelID(ch.id);
+    if (channelID) {
+      selectedChannelIds.add(channelID);
+    }
+  });
+  filterChannels();
+}
+
+function toggleVisibleChannelsSelection() {
+  if (getSelectedChannelIDs().length === 0) {
+    selectAllVisibleChannels();
+    return;
+  }
+  invertVisibleChannelsSelection();
+}
+
+function invertVisibleChannelsSelection() {
+  const visibleChannels = getVisibleChannelsForSelection();
+
+  if (visibleChannels.length === 0) {
+    return;
+  }
+
+  visibleChannels.forEach((ch) => {
+    const channelID = normalizeSelectedChannelID(ch.id);
+    if (!channelID) return;
+    if (selectedChannelIds.has(channelID)) {
+      selectedChannelIds.delete(channelID);
+    } else {
+      selectedChannelIds.add(channelID);
+    }
+  });
+  filterChannels();
+}
+
+function clearSelectedChannels() {
+  if (selectedChannelIds.size === 0) return;
+  selectedChannelIds.clear();
+  filterChannels();
+}
+
+async function batchSetSelectedChannelsEnabled(enabled) {
+  const channelIDs = getSelectedChannelIDs();
+  if (channelIDs.length === 0) {
+    if (window.showWarning) window.showWarning(window.t('channels.batchNoSelection'));
+    return;
+  }
+
+  try {
+    const resp = await fetchAPIWithAuth('/admin/channels/batch-enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_ids: channelIDs, enabled })
+    });
+    if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+
+    const data = resp.data || {};
+    selectedChannelIds.clear();
+    clearChannelsCache();
+    await loadChannels(filters.channelType);
+
+    if (window.showSuccess) {
+      window.showSuccess(window.t('channels.batchEnabledSummary', {
+        action: enabled ? window.t('common.enable') : window.t('common.disable'),
+        updated: data.updated || 0,
+        unchanged: data.unchanged || 0,
+        notFound: data.not_found_count || 0
+      }));
+    }
+  } catch (e) {
+    console.error('Batch set enabled failed', e);
+    if (window.showError) window.showError(window.t('channels.batchOperationFailed', { error: e.message }));
+  }
+}
+
+async function batchRefreshSelectedChannels(mode) {
+  const channelIDs = getSelectedChannelIDs();
+  if (channelIDs.length === 0) {
+    if (window.showWarning) window.showWarning(window.t('channels.batchNoSelection'));
+    return;
+  }
+
+  if (mode === 'replace' && !confirm(window.t('channels.batchRefreshReplaceConfirm', { count: channelIDs.length }))) {
+    return;
+  }
+
+  try {
+    const resp = await fetchAPIWithAuth('/admin/channels/models/refresh-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_ids: channelIDs,
+        mode
+      })
+    });
+    if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+
+    const data = resp.data || {};
+    selectedChannelIds.clear();
+    clearChannelsCache();
+    await loadChannels(filters.channelType);
+
+    if (window.showSuccess) {
+      window.showSuccess(window.t('channels.batchRefreshSummary', {
+        mode: mode === 'replace' ? window.t('channels.batchModeReplace') : window.t('channels.batchModeMerge'),
+        updated: data.updated || 0,
+        unchanged: data.unchanged || 0,
+        failed: data.failed || 0
+      }));
+    }
+  } catch (e) {
+    console.error('Batch refresh models failed', e);
+    if (window.showError) window.showError(window.t('channels.batchOperationFailed', { error: e.message }));
+  }
+}
+
+function batchEnableSelectedChannels() {
+  return batchSetSelectedChannelsEnabled(true);
+}
+
+function batchDisableSelectedChannels() {
+  return batchSetSelectedChannelsEnabled(false);
+}
+
+function batchRefreshSelectedChannelsMerge() {
+  return batchRefreshSelectedChannels('merge');
+}
+
+function batchRefreshSelectedChannelsReplace() {
+  return batchRefreshSelectedChannels('replace');
 }
 
 async function copyChannel(id, name) {
@@ -1003,10 +1264,11 @@ const COMMON_MODELS = {
   anthropic: [
     'claude-sonnet-4-5-20250929',
     'claude-haiku-4-5-20251001',
-    'claude-opus-4-5-20251101',
-    'claude-opus-4-6'
+    'claude-opus-4-6',
+    'claude-sonnet-4-6',
   ],
   codex: [
+    'gpt-5.1-codex-mini',
     'gpt-5.2',
     'gpt-5.2-codex',
     'gpt-5.3-codex'
