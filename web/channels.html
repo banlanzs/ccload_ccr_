@@ -196,6 +196,17 @@
               </span>
               <span data-i18n="channels.batchRefreshReplace">模型覆盖刷新</span>
             </button>
+            <button id="batchDeleteChannelsBtn" type="button"
+              class="btn btn-sm channel-batch-action channel-batch-action--delete"
+              onclick="batchDeleteSelectedChannels()" disabled>
+              <span class="channel-batch-action__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M6 8V14M10 8V14M14 8V14M4.5 5.5H15.5M8 5.5V4.2C8 3.54 8.54 3 9.2 3H10.8C11.46 3 12 3.54 12 4.2V5.5"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span data-i18n="channels.batchDeleteChannels">批量删除</span>
+            </button>
             <button id="batchFloatingMenuCloseBtn" type="button" class="channel-batch-close"
               onclick="clearSelectedChannels()" data-i18n-title="common.close" title="关闭" disabled>
               <svg width="26" height="26" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"

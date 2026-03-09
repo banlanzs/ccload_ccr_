@@ -832,6 +832,61 @@ func (s *Server) HandleBatchSetEnabled(c *gin.Context) {
 	})
 }
 
+// POST /admin/channels/batch-delete
+func (s *Server) HandleBatchDeleteChannels(c *gin.Context) {
+	var req struct {
+		ChannelIDs []int64 `json:"channel_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	channelIDs := normalizeBatchChannelIDs(req.ChannelIDs)
+	if len(channelIDs) == 0 {
+		RespondError(c, http.StatusBadRequest, fmt.Errorf("channel_ids cannot be empty"))
+		return
+	}
+
+	ctx := c.Request.Context()
+	deleted := 0
+	failed := 0
+	notFound := 0
+
+	for _, channelID := range channelIDs {
+		if _, err := s.store.GetConfig(ctx, channelID); err != nil {
+			notFound++
+			continue
+		}
+
+		if err := s.store.DeleteConfig(ctx, channelID); err != nil {
+			log.Printf("batch-delete: delete channel %d failed: %v", channelID, err)
+			failed++
+			continue
+		}
+
+		if s.keySelector != nil {
+			s.keySelector.RemoveChannelCounter(channelID)
+		}
+		if s.urlSelector != nil {
+			s.urlSelector.RemoveChannel(channelID)
+		}
+
+		deleted++
+	}
+
+	if deleted > 0 {
+		s.InvalidateChannelListCache()
+	}
+
+	RespondJSON(c, http.StatusOK, gin.H{
+		"deleted":   deleted,
+		"failed":    failed,
+		"not_found": notFound,
+	})
+}
+
 func normalizeBatchChannelIDs(rawIDs []int64) []int64 {
 	if len(rawIDs) == 0 {
 		return nil

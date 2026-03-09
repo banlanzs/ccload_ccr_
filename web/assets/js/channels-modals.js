@@ -429,7 +429,8 @@ function updateBatchChannelSelectionUI() {
     'batchEnableChannelsBtn',
     'batchDisableChannelsBtn',
     'batchRefreshMergeBtn',
-    'batchRefreshReplaceBtn'
+    'batchRefreshReplaceBtn',
+    'batchDeleteChannelsBtn'
   ];
   actionBtnIDs.forEach((id) => {
     const btn = document.getElementById(id);
@@ -693,6 +694,43 @@ function batchRefreshSelectedChannelsMerge() {
 
 function batchRefreshSelectedChannelsReplace() {
   return batchRefreshSelectedChannels('replace');
+}
+
+async function batchDeleteSelectedChannels() {
+  const channelIDs = getSelectedChannelIDs();
+  if (channelIDs.length === 0) {
+    if (window.showWarning) window.showWarning(window.t('channels.batchNoSelection'));
+    return;
+  }
+
+  if (!confirm(window.t('channels.confirmBatchDeleteChannels', { count: channelIDs.length }))) {
+    return;
+  }
+
+  try {
+    const resp = await fetchAPIWithAuth('/admin/channels/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_ids: channelIDs })
+    });
+    if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+
+    const data = resp.data || {};
+    selectedChannelIds.clear();
+    clearChannelsCache();
+    await loadChannels(filters.channelType);
+
+    if (window.showSuccess) {
+      window.showSuccess(window.t('channels.batchDeleteSummary', {
+        deleted: data.deleted || 0,
+        failed: data.failed || 0,
+        notFound: data.not_found || 0
+      }));
+    }
+  } catch (e) {
+    console.error('Batch delete failed', e);
+    if (window.showError) window.showError(window.t('channels.batchOperationFailed', { error: e.message }));
+  }
 }
 
 async function copyChannel(id, name) {
