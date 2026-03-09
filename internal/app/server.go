@@ -42,7 +42,8 @@ type Server struct {
 	healthCache     *HealthCache          // 渠道健康度缓存
 	costCache       *CostCache            // 渠道每日成本缓存
 	statsCache      *StatsCache           // 统计结果缓存层
-	channelBalancer *SmoothWeightedRR     // 渠道负载均衡器（平滑加权轮询）
+	channelBalancer  *SmoothWeightedRR     // 渠道负载均衡器（平滑加权轮询）
+	urlSelector      *URLSelector          // URL选择器（多URL场景的延迟追踪与冷却）
 	client           *http.Client          // HTTP客户端
 	activeRequests   *activeRequestManager // 进行中请求（内存状态，不持久化）
 	conversionRouter *ccr.ConversionRouter // 格式转换路由器（与legacy transformer共存）
@@ -190,6 +191,9 @@ func NewServer(store storage.Store) *Server {
 
 	// 初始化渠道负载均衡器（平滑加权轮询，确定性分流）
 	s.channelBalancer = NewSmoothWeightedRR()
+
+	// 初始化URL选择器（多URL场景：EWMA延迟追踪+URL级冷却）
+	s.urlSelector = NewURLSelector()
 
 	// 初始化健康度缓存（启动时读取配置，修改后重启生效）
 	defaultHealthCfg := model.DefaultHealthScoreConfig()
@@ -502,12 +506,14 @@ func (s *Server) SetupRoutes(r *gin.Engine) {
 		admin.PUT("/channels/:id", s.HandleChannelByID)
 		admin.DELETE("/channels/:id", s.HandleChannelByID)
 		admin.GET("/channels/:id/keys", s.HandleChannelKeys)
+		admin.GET("/channels/:id/url-stats", s.HandleChannelURLStats)
 		admin.POST("/channels/models/fetch", s.HandleFetchModelsPreview) // 临时渠道配置获取模型列表
 		admin.POST("/channels/models/refresh-batch", s.HandleBatchRefreshModels)
 		admin.GET("/channels/:id/models/fetch", s.HandleFetchModels) // 获取渠道可用模型列表(新增)
 		admin.POST("/channels/:id/models", s.HandleAddModels)        // 添加渠道模型
 		admin.DELETE("/channels/:id/models", s.HandleDeleteModels)   // 删除渠道模型
 		admin.POST("/channels/:id/test", s.HandleChannelTest)
+		admin.POST("/channels/:id/test-url", s.HandleChannelURLTest)
 		admin.POST("/channels/:id/cooldown", s.HandleSetChannelCooldown)
 		admin.POST("/channels/:id/keys/:keyIndex/cooldown", s.HandleSetKeyCooldown)
 		admin.DELETE("/channels/:id/keys/:keyIndex", s.HandleDeleteAPIKey)

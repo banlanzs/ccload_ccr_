@@ -119,3 +119,65 @@ func TestDefaultHealthScoreConfig(t *testing.T) {
 		t.Fatalf("unexpected default config: %+v", cfg)
 	}
 }
+
+func TestGetURLs_SingleURL(t *testing.T) {
+	c := &Config{URL: "https://api.openai.com"}
+	urls := c.GetURLs()
+	if len(urls) != 1 || urls[0] != "https://api.openai.com" {
+		t.Errorf("expected [https://api.openai.com], got %v", urls)
+	}
+}
+
+func TestGetURLs_MultipleURLs(t *testing.T) {
+	c := &Config{URL: "https://us.api.openai.com\nhttps://eu.api.openai.com"}
+	urls := c.GetURLs()
+	if len(urls) != 2 {
+		t.Fatalf("expected 2 urls, got %d", len(urls))
+	}
+	if urls[0] != "https://us.api.openai.com" || urls[1] != "https://eu.api.openai.com" {
+		t.Errorf("unexpected urls: %v", urls)
+	}
+}
+
+func TestGetURLs_EmptyLinesIgnored(t *testing.T) {
+	c := &Config{URL: "https://a.com\n\n  \nhttps://b.com\n"}
+	urls := c.GetURLs()
+	if len(urls) != 2 {
+		t.Fatalf("expected 2 urls (skip blanks), got %d: %v", len(urls), urls)
+	}
+}
+
+func TestGetURLs_DuplicateURLsDeduped(t *testing.T) {
+	c := &Config{URL: "https://a.com\nhttps://b.com\nhttps://a.com\nhttps://b.com"}
+	urls := c.GetURLs()
+	if len(urls) != 2 {
+		t.Fatalf("expected 2 unique urls, got %d: %v", len(urls), urls)
+	}
+	if urls[0] != "https://a.com" || urls[1] != "https://b.com" {
+		t.Fatalf("unexpected urls order/content: %v", urls)
+	}
+}
+
+func TestGetURLs_TrailingSlashPreserved(t *testing.T) {
+	c := &Config{URL: "https://api.openai.com/v1/"}
+	urls := c.GetURLs()
+	if urls[0] != "https://api.openai.com/v1/" {
+		t.Errorf("trailing slash should be preserved, got %q", urls[0])
+	}
+}
+
+func TestGetURLs_SingleURLTrimmed(t *testing.T) {
+	c := &Config{URL: "  https://api.openai.com/v1  "}
+	urls := c.GetURLs()
+	if len(urls) != 1 || urls[0] != "https://api.openai.com/v1" {
+		t.Fatalf("expected trimmed single url, got %v", urls)
+	}
+}
+
+func TestGetURLs_WhitespaceOnlyReturnsEmpty(t *testing.T) {
+	c := &Config{URL: "\n \n\t\n"}
+	urls := c.GetURLs()
+	if len(urls) != 0 {
+		t.Fatalf("expected empty urls for whitespace-only input, got %v", urls)
+	}
+}

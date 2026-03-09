@@ -94,6 +94,10 @@ type fwResult struct {
 	// 用于捕获SSE流中的error事件（如1308错误），在流结束后触发冷却逻辑
 	// 虽然HTTP状态码是200，但error事件表示实际上发生了错误
 	SSEErrorEvent []byte // SSE流中检测到的最后一个error事件的完整JSON
+
+	// OpenAI service_tier（2026-03新增）
+	// 响应中的 service_tier 字段决定计费倍率：priority=2x, flex=0.5x, default=1x
+	ServiceTier string
 }
 
 // ForwardObserver 封装转发过程中的观测回调（遵循SRP，避免函数签名膨胀）
@@ -118,6 +122,7 @@ type proxyRequestContext struct {
 	observer         *ForwardObserver // 转发观测回调（可选）
 	startTime        time.Time        // 请求开始时间（用于统计）
 	attemptStartTime time.Time        // 渠道尝试开始时间（用于日志记录）
+	baseURL          string           // 当前尝试使用的上游URL（多URL场景）
 }
 
 // proxyResult 代理请求结果
@@ -127,6 +132,7 @@ type proxyResult struct {
 	body             []byte
 	channelID        *int64
 	duration         float64
+	firstByteTime    float64
 	succeeded        bool
 	isClientCanceled bool            // 客户端主动取消请求（context.Canceled）
 	nextAction       cooldown.Action // 统一重试决策：RetryKey/RetryChannel/ReturnClient
@@ -162,8 +168,8 @@ func isStreamingRequest(path string, body []byte) bool {
 // ============================================================================
 
 // buildUpstreamURL 构建上游完整URL（KISS）
-func buildUpstreamURL(cfg *model.Config, requestPath, rawQuery string) string {
-	upstreamURL := strings.TrimRight(cfg.URL, "/") + requestPath
+func buildUpstreamURL(baseURL string, requestPath, rawQuery string) string {
+	upstreamURL := strings.TrimRight(baseURL, "/") + requestPath
 
 	// 移除 key 参数（Gemini API 认证格式），避免泄露到上游
 	if rawQuery != "" {
@@ -605,6 +611,7 @@ type logEntryParams struct {
 	APIKeyUsed   string
 	AuthTokenID  int64
 	ClientIP     string
+	BaseURL      string // 请求使用的上游URL
 	Result       *fwResult
 	ErrMsg       string
 	StartTime    time.Time // 渠道尝试开始时间（用于日志记录）
@@ -626,6 +633,7 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		APIKeyUsed:  p.APIKeyUsed,
 		AuthTokenID: p.AuthTokenID,
 		ClientIP:    p.ClientIP,
+		BaseURL:     p.BaseURL,
 	}
 
 	// 记录实际转发的模型（仅当发生重定向时）
@@ -680,6 +688,7 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		entry.CacheCreationInputTokens = res.CacheCreationInputTokens
 		entry.Cache5mInputTokens = res.Cache5mInputTokens
 		entry.Cache1hInputTokens = res.Cache1hInputTokens
+		entry.ServiceTier = res.ServiceTier
 
 		// 成本计算（2025-11新增，基于token统计）
 		// 2025-12更新：使用CalculateCostDetailed支持5m和1h缓存分别计费
@@ -689,14 +698,21 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		if costModel == "" {
 			costModel = p.RequestModel
 		}
-		entry.Cost = util.CalculateCostDetailed(
-			costModel,
-			res.InputTokens,
-			res.OutputTokens,
-			res.CacheReadInputTokens,
-			res.Cache5mInputTokens,
-			res.Cache1hInputTokens,
-		)
+		if res.ServiceTier == "fast" && util.IsFastModeModel(costModel) {
+			entry.Cost = util.CalculateFastModeCost(
+				res.InputTokens, res.OutputTokens,
+				res.CacheReadInputTokens, res.Cache5mInputTokens, res.Cache1hInputTokens,
+			)
+		} else {
+			entry.Cost = util.CalculateCostDetailed(
+				costModel,
+				res.InputTokens,
+				res.OutputTokens,
+				res.CacheReadInputTokens,
+				res.Cache5mInputTokens,
+				res.Cache1hInputTokens,
+			) * util.OpenAIServiceTierMultiplier(costModel, res.ServiceTier)
+		}
 	} else {
 		entry.Message = "unknown"
 	}

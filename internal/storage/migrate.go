@@ -86,6 +86,10 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureChannelsConversionColumns(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate channels conversion columns: %w", err)
 			}
+			// 增量迁移：将url字段从VARCHAR(191)扩展为TEXT（支持多URL存储）
+			if err := migrateChannelsURLToText(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate channels url to text: %w", err)
+			}
 		}
 
 		// 增量迁移：修复 api_keys.api_key 历史长度漂移（旧版可能为 VARCHAR(64)）
@@ -198,7 +202,13 @@ func ensureLogsNewColumns(ctx context.Context, db *sql.DB, dialect Dialect) erro
 		if err := ensureLogsAPIKeyHashMySQL(ctx, db); err != nil {
 			return err
 		}
-		return ensureLogsActualModelMySQL(ctx, db)
+		if err := ensureLogsActualModelMySQL(ctx, db); err != nil {
+			return err
+		}
+		if err := ensureLogsBaseURLMySQL(ctx, db); err != nil {
+			return err
+		}
+		return ensureLogsServiceTierMySQL(ctx, db)
 	}
 	// SQLite: 使用PRAGMA table_info检查列
 	return ensureLogsColumnsSQLite(ctx, db)
@@ -268,6 +278,8 @@ func ensureLogsColumnsSQLite(ctx context.Context, db *sql.DB) error {
 		{name: "cache_1h_input_tokens", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{name: "actual_model", definition: "TEXT NOT NULL DEFAULT ''"}, // 实际转发的模型
 		{name: "api_key_hash", definition: "TEXT NOT NULL DEFAULT ''"}, // API Key SHA256（用于精确定位 key_index）
+		{name: "base_url", definition: "TEXT NOT NULL DEFAULT ''"},     // 请求使用的上游URL（多URL场景）
+		{name: "service_tier", definition: "TEXT NOT NULL DEFAULT ''"}, // OpenAI service_tier: priority/flex
 	}); err != nil {
 		return err
 	}
@@ -403,6 +415,49 @@ func ensureLogsAPIKeyHashMySQL(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("add api_key_hash column: %w", err)
 	}
 
+	return nil
+}
+
+func ensureLogsBaseURLMySQL(ctx context.Context, db *sql.DB) error {
+	var count int
+	err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='logs' AND COLUMN_NAME='base_url'",
+	).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check base_url existence: %w", err)
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	_, err = db.ExecContext(ctx,
+		"ALTER TABLE logs ADD COLUMN base_url VARCHAR(500) NOT NULL DEFAULT '' COMMENT '请求使用的上游URL(新增2026-03)'",
+	)
+	if err != nil {
+		return fmt.Errorf("add base_url column: %w", err)
+	}
+
+	return nil
+}
+
+func ensureLogsServiceTierMySQL(ctx context.Context, db *sql.DB) error {
+	var count int
+	err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='logs' AND COLUMN_NAME='service_tier'",
+	).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check service_tier existence: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err = db.ExecContext(ctx,
+		"ALTER TABLE logs ADD COLUMN service_tier VARCHAR(20) NOT NULL DEFAULT '' COMMENT 'OpenAI service_tier: priority/flex(新增2026-03)'",
+	)
+	if err != nil {
+		return fmt.Errorf("add service_tier column: %w", err)
+	}
 	return nil
 }
 
@@ -1051,6 +1106,35 @@ func relaxDeprecatedChannelFields(ctx context.Context, db *sql.DB, dialect Diale
 	// SQLite: 不支持直接修改列约束，但 TEXT 类型天然允许 NULL
 	// SQLite 的 NOT NULL 约束只在显式 INSERT 该列时检查
 	// 新版程序 INSERT 语句不包含这些列，SQLite 会使用默认值（NULL）
+	return nil
+}
+
+// migrateChannelsURLToText 将channels.url从VARCHAR(191)扩展为TEXT
+// 支持多URL存储（换行分隔）
+func migrateChannelsURLToText(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect != DialectMySQL {
+		// SQLite: VARCHAR(191) 本质上就是 TEXT，无需变更
+		return nil
+	}
+
+	// MySQL: 检查当前列类型
+	var dataType string
+	err := db.QueryRowContext(ctx,
+		"SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='channels' AND COLUMN_NAME='url'",
+	).Scan(&dataType)
+	if err != nil {
+		return fmt.Errorf("check url column type: %w", err)
+	}
+
+	if strings.EqualFold(dataType, "text") {
+		return nil // 已经是 TEXT
+	}
+
+	if _, err := db.ExecContext(ctx,
+		"ALTER TABLE channels MODIFY COLUMN url TEXT NOT NULL"); err != nil {
+		return fmt.Errorf("modify url column to TEXT: %w", err)
+	}
+	log.Printf("[MIGRATE] Modified channels.url: VARCHAR → TEXT")
 	return nil
 }
 

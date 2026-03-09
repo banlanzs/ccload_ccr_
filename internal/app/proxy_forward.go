@@ -62,15 +62,16 @@ func prependToBody(resp *http.Response, prefix []byte) {
 // 从proxy.go提取，遵循SRP原则
 func (s *Server) buildProxyRequest(
 	reqCtx *requestContext,
-	cfg *model.Config,
+	_ *model.Config,
 	apiKey string,
 	method string,
 	body []byte,
 	hdr http.Header,
 	rawQuery, requestPath string,
+	baseURL string,
 ) (*http.Request, error) {
 	// 1. 构建完整 URL
-	upstreamURL := buildUpstreamURL(cfg, requestPath, rawQuery)
+	upstreamURL := buildUpstreamURL(baseURL, requestPath, rawQuery)
 
 	// 2. 创建带上下文的请求
 	req, err := buildUpstreamRequest(reqCtx.ctx, method, upstreamURL, body)
@@ -288,9 +289,11 @@ func (s *Server) handleSuccessResponse(
 		case *sseUsageParser:
 			result.Cache5mInputTokens = p.Cache5mInputTokens
 			result.Cache1hInputTokens = p.Cache1hInputTokens
+			result.ServiceTier = p.ServiceTier
 		case *jsonUsageParser:
 			result.Cache5mInputTokens = p.Cache5mInputTokens
 			result.Cache1hInputTokens = p.Cache1hInputTokens
+			result.ServiceTier = p.ServiceTier
 		}
 
 		if errorEvent := parser.GetLastError(); errorEvent != nil {
@@ -353,7 +356,7 @@ func (s *Server) handleResponse(
 	w http.ResponseWriter,
 	channelType string,
 	cfg *model.Config,
-	apiKey string,
+	_ string,
 	observer *ForwardObserver,
 ) (*fwResult, float64, error) {
 	hdrClone := resp.Header.Clone()
@@ -463,13 +466,13 @@ func (s *Server) handleResponse(
 // 从proxy.go提取，遵循SRP原则
 // 参数新增 apiKey 用于直接传递已选中的API Key（从KeySelector获取）
 // 参数新增 method 用于支持任意HTTP方法（GET、POST、PUT、DELETE等）
-func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, body []byte, hdr http.Header, rawQuery, requestPath string, w http.ResponseWriter, observer *ForwardObserver) (*fwResult, float64, error) {
+func (s *Server) forwardOnceAsync(ctx context.Context, cfg *model.Config, apiKey string, method string, body []byte, hdr http.Header, rawQuery, requestPath string, baseURL string, w http.ResponseWriter, observer *ForwardObserver) (*fwResult, float64, error) {
 	// 1. 创建请求上下文（处理超时）
 	reqCtx := s.newRequestContext(ctx, requestPath, body)
 	defer reqCtx.cleanup() // [INFO] 统一清理：定时器 + context（总是安全）
 
 	// 2. 构建上游请求
-	req, err := s.buildProxyRequest(reqCtx, cfg, apiKey, method, body, hdr, rawQuery, requestPath)
+	req, err := s.buildProxyRequest(reqCtx, cfg, apiKey, method, body, hdr, rawQuery, requestPath, baseURL)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -540,21 +543,27 @@ func (s *Server) forwardAttempt(
 	actualModel string, // [INFO] 重定向后的实际模型名称
 	bodyToSend []byte,
 	requestPath string, // [FIX] 2026-01: 可能经过模型名替换的请求路径
+	baseURL string, // 显式传入的URL（多URL场景）
 	w http.ResponseWriter,
+	deferChannelCooldown bool, // 多URL场景下，非最后一个URL不应触发渠道级冷却
 ) (*proxyResult, cooldown.Action) {
 	// 记录渠道尝试开始时间（用于日志记录，每次渠道/Key切换时更新）
 	reqCtx.attemptStartTime = time.Now()
+	reqCtx.baseURL = baseURL
 
 	// 转发请求（传递实际的API Key字符串和观测回调）
 	// [FIX] 2026-01: 使用传入的 requestPath（可能已替换模型名）而非 reqCtx.requestPath
 	res, duration, err := s.forwardOnceAsync(ctx, cfg, selectedKey, reqCtx.requestMethod,
-		bodyToSend, reqCtx.header, reqCtx.rawQuery, requestPath, w, reqCtx.observer)
+		bodyToSend, reqCtx.header, reqCtx.rawQuery, requestPath, baseURL, w, reqCtx.observer)
 
 	// 处理网络错误或异常响应（如空响应）
 	// [INFO] 修复：handleResponse可能返回err即使StatusCode=200（例如Content-Length=0）
 	// [FIX] 2025-12: 传递 res 和 reqCtx，用于保留 499 场景下已消耗的 token 统计
 	if err != nil {
-		return s.handleNetworkError(ctx, cfg, keyIndex, actualModel, selectedKey, reqCtx.tokenID, reqCtx.clientIP, duration, err, res, reqCtx)
+		return s.handleNetworkError(
+			ctx, cfg, keyIndex, actualModel, selectedKey, reqCtx.tokenID, reqCtx.clientIP,
+			duration, err, res, reqCtx, deferChannelCooldown,
+		)
 	}
 
 	// 处理成功响应（仅当err==nil且状态码2xx时）
@@ -597,7 +606,9 @@ func (s *Server) forwardAttempt(
 	}
 
 	// 处理错误响应
-	return s.handleProxyErrorResponse(ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx)
+	return s.handleProxyErrorResponse(
+		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
+	)
 }
 
 // ============================================================================
@@ -656,6 +667,19 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	// 如果模糊匹配将 gemini-3-flash 改为 gemini-3-flash-preview，URL 路径也需要同步更新
 	requestPath := replaceModelInPath(reqCtx.requestPath, reqCtx.originalModel, actualModel)
 
+	// 获取渠道URL列表（单URL时退化为单元素切片）
+	urls := cfg.GetURLs()
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no valid URLs configured for channel %d", cfg.ID)
+	}
+
+	// 多URL场景：首次使用前做TCP连接探测预热
+	// 目的：通过TCP连接耗时（纯网络延迟，与模型推理无关）为URLSelector提供初始EWMA种子，
+	// 避免首次请求随机选到网络延迟更高的URL。
+	if len(urls) > 1 && s.urlSelector != nil {
+		s.urlSelector.ProbeURLs(ctx, cfg.ID, urls)
+	}
+
 	// Key重试循环
 	for range maxKeyRetries {
 		// 检查context是否已取消/超时
@@ -678,24 +702,66 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 			s.activeRequests.Update(reqCtx.activeReqID, cfg.ID, cfg.Name, cfg.GetChannelType(), selectedKey, reqCtx.tokenID)
 		}
 
-		// 单次转发尝试（传递实际的API Key字符串）
-		// [INFO] 修复：传递 actualModel 用于日志记录
-		// [FIX] 2026-01: 传递 requestPath（可能经过模型名替换）
-		result, nextAction := s.forwardAttempt(
-			ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, w)
+		// URL循环（单URL时退化为单次迭代）
+		sortedURLs := orderURLsWithSelector(s.urlSelector, cfg.ID, urls)
+		var urlLastFailure *proxyResult
+		for urlIdx, urlEntry := range sortedURLs {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return makeCtxDoneResult(ctxErr), nil
+			}
 
-		if result != nil {
-			if result.succeeded {
+			// 更新活跃请求的当前URL（用于前端显示）
+			if reqCtx.activeReqID > 0 {
+				s.activeRequests.SetBaseURL(reqCtx.activeReqID, urlEntry.url)
+			}
+
+			shouldDeferChannelCooldown := len(urls) > 1 && urlIdx < len(sortedURLs)-1
+			result, nextAction := s.forwardAttempt(
+				ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, urlEntry.url, w, shouldDeferChannelCooldown)
+
+			if result != nil && result.succeeded {
+				// 成功：记录TTFB到URLSelector（仅多URL场景）
+				if len(urls) > 1 && result.status >= 200 && result.status < 300 {
+					ttfb := time.Duration(result.firstByteTime * float64(time.Second))
+					if ttfb <= 0 {
+						ttfb = time.Duration(result.duration * float64(time.Second))
+					}
+					if ttfb > 0 {
+						s.urlSelector.RecordLatency(cfg.ID, urlEntry.url, ttfb)
+					}
+				}
 				return result, nil
 			}
-			lastFailure = result
+
+			if result != nil {
+				urlLastFailure = result
+			}
+
+			// Key级错误：换URL无意义，跳出URL循环
+			if nextAction == cooldown.ActionRetryKey {
+				break
+			}
+			// 客户端错误：直接返回
+			if nextAction == cooldown.ActionReturnClient {
+				return urlLastFailure, nil
+			}
+			// 渠道级错误 (ActionRetryChannel) 或网络错误：
+			// 在多URL场景下，先尝试下一个URL
+			if len(urls) > 1 {
+				s.urlSelector.CooldownURL(cfg.ID, urlEntry.url)
+				continue // 下一个URL
+			}
+			// 单URL：保持原有行为
+			break
 		}
 
-		if nextAction == cooldown.ActionRetryKey {
-			continue
-		}
-		if nextAction == cooldown.ActionRetryChannel {
-			break
+		// URL循环结束后的Key级决策
+		if urlLastFailure != nil {
+			lastFailure = urlLastFailure
+			if urlLastFailure.nextAction == cooldown.ActionRetryKey {
+				continue // 下一个Key
+			}
+			break // ActionRetryChannel 或 ActionReturnClient
 		}
 		break
 	}

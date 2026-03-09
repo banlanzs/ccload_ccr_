@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,6 +65,53 @@ func TestAdminModels_FetchModelsPreview(t *testing.T) {
 		}
 		if gotAuth != "Bearer sk-test" {
 			t.Fatalf("Authorization=%q, want %q", gotAuth, "Bearer sk-test")
+		}
+	})
+
+	t.Run("multi url fallback", func(t *testing.T) {
+		failCalls := 0
+		okCalls := 0
+
+		failUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			failCalls++
+			http.Error(w, "boom", http.StatusBadGateway)
+		}))
+		t.Cleanup(failUpstream.Close)
+
+		okUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			okCalls++
+			time.Sleep(15 * time.Millisecond)
+			if r.URL.Path != "/v1/models" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4.1-mini"}]}`))
+		}))
+		t.Cleanup(okUpstream.Close)
+
+		payload := map[string]any{
+			"channel_type": "openai",
+			"url":          failUpstream.URL + "\n" + okUpstream.URL,
+			"api_key":      "sk-test",
+		}
+		c, w := newTestContext(t, newJSONRequest(t, http.MethodPost, "/admin/channels/models/fetch", payload))
+
+		server.HandleFetchModelsPreview(c)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var resp struct {
+			Success bool                `json:"success"`
+			Data    FetchModelsResponse `json:"data"`
+		}
+		mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
+		if !resp.Success || len(resp.Data.Models) != 1 || resp.Data.Models[0].Model != "gpt-4.1-mini" {
+			t.Fatalf("unexpected resp: %+v", resp)
+		}
+		if failCalls < 1 || okCalls < 1 {
+			t.Fatalf("expected fallback attempts, failCalls=%d okCalls=%d", failCalls, okCalls)
 		}
 	})
 }
@@ -145,6 +193,154 @@ func TestAdminModels_HandleFetchModels(t *testing.T) {
 			t.Fatalf("expected success=false with error, got %+v", resp)
 		}
 	})
+}
+
+func TestAdminModels_HandleFetchModels_MultiURL(t *testing.T) {
+	failCalls := 0
+	failUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		failCalls++
+		http.Error(w, "boom", http.StatusBadGateway)
+	}))
+	t.Cleanup(failUpstream.Close)
+
+	okCalls := 0
+	okUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		okCalls++
+		time.Sleep(15 * time.Millisecond)
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4.1"}]}`))
+	}))
+	t.Cleanup(okUpstream.Close)
+
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+	server.channelCache = storage.NewChannelCache(store, time.Minute)
+	server.urlSelector = NewURLSelector()
+
+	ctx := context.Background()
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:         "multi-url-channel",
+		URL:          failUpstream.URL + "\n" + okUpstream.URL,
+		Priority:     1,
+		ChannelType:  "openai",
+		ModelEntries: []model.ModelEntry{{Model: "m1"}},
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig failed: %v", err)
+	}
+	if err := store.CreateAPIKeysBatch(ctx, []*model.APIKey{
+		{ChannelID: cfg.ID, KeyIndex: 0, APIKey: "sk-test", KeyStrategy: model.KeyStrategySequential},
+	}); err != nil {
+		t.Fatalf("CreateAPIKeysBatch failed: %v", err)
+	}
+	// 强制第一跳命中失败URL，确保触发fallback与反馈逻辑
+	server.urlSelector.CooldownURL(cfg.ID, okUpstream.URL)
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/admin/channels/1/models/fetch", nil))
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", cfg.ID)}}
+
+	server.HandleFetchModels(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool                `json:"success"`
+		Data    FetchModelsResponse `json:"data"`
+	}
+	mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatalf("expected success=true, body=%s", w.Body.String())
+	}
+	if len(resp.Data.Models) != 1 || resp.Data.Models[0].Model != "gpt-4.1" {
+		t.Fatalf("unexpected models: %+v", resp.Data.Models)
+	}
+	if failCalls < 1 || okCalls < 1 {
+		t.Fatalf("expected both URLs attempted, failCalls=%d okCalls=%d", failCalls, okCalls)
+	}
+	if !server.urlSelector.IsCooledDown(cfg.ID, failUpstream.URL) {
+		t.Fatalf("expected failed URL cooled down, url=%s", failUpstream.URL)
+	}
+	latency, exists := server.urlSelector.latencies[urlKey{channelID: cfg.ID, url: okUpstream.URL}]
+	if !exists || latency == nil || latency.value <= 0 {
+		t.Fatalf("expected success URL latency recorded, got=%v", latency)
+	}
+}
+
+func TestAdminModels_HandleFetchModels_MultiURL_KeyErrorDoesNotCooldownURL(t *testing.T) {
+	keyErrCalls := 0
+	keyErrUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		keyErrCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"type":"authentication_error","message":"invalid api key"}}`))
+	}))
+	t.Cleanup(keyErrUpstream.Close)
+
+	okCalls := 0
+	okUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		okCalls++
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4.1"}]}`))
+	}))
+	t.Cleanup(okUpstream.Close)
+
+	server, store, cleanup := setupAdminTestServer(t)
+	defer cleanup()
+	server.channelCache = storage.NewChannelCache(store, time.Minute)
+	server.urlSelector = NewURLSelector()
+
+	ctx := context.Background()
+	cfg, err := store.CreateConfig(ctx, &model.Config{
+		Name:         "multi-url-key-error",
+		URL:          keyErrUpstream.URL + "\n" + okUpstream.URL,
+		Priority:     1,
+		ChannelType:  "openai",
+		ModelEntries: []model.ModelEntry{{Model: "m1"}},
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatalf("CreateConfig failed: %v", err)
+	}
+	if err := store.CreateAPIKeysBatch(ctx, []*model.APIKey{
+		{ChannelID: cfg.ID, KeyIndex: 0, APIKey: "sk-test", KeyStrategy: model.KeyStrategySequential},
+	}); err != nil {
+		t.Fatalf("CreateAPIKeysBatch failed: %v", err)
+	}
+	// 强制首跳优先命中 keyErrUpstream，覆盖“先401再fallback”的路径。
+	server.urlSelector.CooldownURL(cfg.ID, okUpstream.URL)
+
+	c, w := newTestContext(t, newRequest(http.MethodGet, "/admin/channels/1/models/fetch", nil))
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", cfg.ID)}}
+
+	server.HandleFetchModels(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool                `json:"success"`
+		Data    FetchModelsResponse `json:"data"`
+	}
+	mustUnmarshalJSON(t, w.Body.Bytes(), &resp)
+	if !resp.Success {
+		t.Fatalf("expected success=true, body=%s", w.Body.String())
+	}
+	if keyErrCalls < 1 || okCalls < 1 {
+		t.Fatalf("expected both URLs attempted, keyErrCalls=%d okCalls=%d", keyErrCalls, okCalls)
+	}
+	if server.urlSelector.IsCooledDown(cfg.ID, keyErrUpstream.URL) {
+		t.Fatalf("expected key-error URL not cooled down, url=%s", keyErrUpstream.URL)
+	}
 }
 
 func TestAdminModels_HandleBatchRefreshModels(t *testing.T) {

@@ -192,6 +192,11 @@ func TestCalculateCost_OpenAIModels(t *testing.T) {
 		// GPT-5 系列（Standard层级 - 官方定价）
 		// inputTokens已归一化: 原始10309-缓存6016=4293
 		// 2025-12更新: OpenAI缓存改为90%折扣（0.1倍，不是50%折扣）
+		{"gpt-5.4", 1000, 1000, 0, 0.0175},                  // $2.50/1M input, $15/1M output (<=272K)
+		{"gpt-5.4", 300000, 1000, 0, 1.5225},                // $5.00/1M input, $22.50/1M output (>272K)
+		{"gpt-5.4-pro", 1000, 1000, 0, 0.21},                // $30/1M input, $180/1M output (<=272K)
+		{"gpt-5.4-pro", 300000, 1000, 0, 18.27},             // $60/1M input, $270/1M output (>272K)
+		{"gpt-5.4-custom", 1000, 1000, 0, 0.0175},           // 模糊匹配到gpt-5.4
 		{"gpt-5.3-codex-spark", 4293, 17, 6016, 0.00880355}, // 4293×1.75/1M + 17×14/1M + 6016×(1.75×0.1)/1M
 		{"gpt-5.3-codex", 4293, 17, 6016, 0.00880355},       // 4293×1.75/1M + 17×14/1M + 6016×(1.75×0.1)/1M
 		{"gpt-5.3", 1000, 1000, 0, 0.01575},                 // $1.75/1M input, $14/1M output
@@ -226,6 +231,76 @@ func TestCalculateCost_OpenAIModels(t *testing.T) {
 		if !floatEquals(cost, tc.expectedCost, 0.000001) {
 			t.Errorf("%s: 成本 = %.6f, 期望 %.6f", tc.model, cost, tc.expectedCost)
 		}
+	}
+}
+
+func TestOpenAIServiceTierMultiplier(t *testing.T) {
+	// gpt-5 standard: input $1.25/1M, output $10/1M → 1000 tokens each = $0.01125
+	baseCost := CalculateCostDetailed("gpt-5", 1000, 1000, 0, 0, 0)
+
+	// 白名单内模型 + 不同 tier
+	testCases := []struct {
+		model      string
+		tier       string
+		multiplier float64
+	}{
+		{"gpt-5", "priority", 2.0},
+		{"gpt-5", "flex", 0.5},
+		{"gpt-5", "default", 1.0},
+		{"gpt-5", "", 1.0},
+		{"gpt-5", "auto", 1.0},
+		{"gpt-4o", "priority", 2.0},
+		{"gpt-4.1-mini", "flex", 0.5},
+		{"o3", "priority", 2.0},
+		{"o4-mini", "flex", 0.5},
+		// 日期后缀变体
+		{"gpt-5.4-2026-03-01", "priority", 2.0},
+		{"gpt-4o-2024-05-13", "priority", 2.0},
+		{"o3-2026-01", "flex", 0.5},
+	}
+
+	for _, tc := range testCases {
+		m := OpenAIServiceTierMultiplier(tc.model, tc.tier)
+		if m != tc.multiplier {
+			t.Errorf("model=%q tier=%q: multiplier = %.1f, 期望 %.1f", tc.model, tc.tier, m, tc.multiplier)
+		}
+	}
+
+	// 白名单外模型：即使响应带 service_tier 也不应用倍率
+	unsupportedCases := []struct {
+		model string
+		tier  string
+	}{
+		{"gpt-5-pro", "priority"},
+		{"gpt-5-nano", "priority"},
+		{"gpt-5.4-pro", "priority"},
+		{"gpt-5.3-codex-spark", "priority"},
+		{"o1", "priority"},
+		{"o1-pro", "priority"},
+		{"o3-pro", "priority"},
+		{"o3-mini", "priority"},
+		{"claude-sonnet-4-5", "priority"},
+		{"deepseek-r1", "priority"},
+	}
+	for _, tc := range unsupportedCases {
+		m := OpenAIServiceTierMultiplier(tc.model, tc.tier)
+		if m != 1.0 {
+			t.Errorf("不支持的model=%q tier=%q: multiplier = %.1f, 期望 1.0", tc.model, tc.tier, m)
+		}
+	}
+
+	// 验证 gpt-5 priority 具体数值: input $2.50/1M, output $20/1M
+	priorityCost := baseCost * OpenAIServiceTierMultiplier("gpt-5", "priority")
+	expectedPriority := (2.50*1000 + 20.0*1000) / 1_000_000
+	if !floatEquals(priorityCost, expectedPriority, 0.000001) {
+		t.Errorf("gpt-5 priority: cost = %.6f, 期望 %.6f", priorityCost, expectedPriority)
+	}
+
+	// 验证 gpt-5 flex 具体数值: input $0.625/1M, output $5/1M
+	flexCost := baseCost * OpenAIServiceTierMultiplier("gpt-5", "flex")
+	expectedFlex := (0.625*1000 + 5.0*1000) / 1_000_000
+	if !floatEquals(flexCost, expectedFlex, 0.000001) {
+		t.Errorf("gpt-5 flex: cost = %.6f, 期望 %.6f", flexCost, expectedFlex)
 	}
 }
 
@@ -740,3 +815,95 @@ func TestCalculateCostDetailed_CompleteScenario(t *testing.T) {
 }
 
 // 旧的 CalculateCost() 兼容壳已删除，避免重复API与歧义参数。
+
+// ============================================================================
+// Anthropic Fast Mode 测试
+// ============================================================================
+
+func TestIsFastModeModel(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{"claude-opus-4-6", true},
+		{"claude-opus-4-6-20260301", true},
+		{"Claude-Opus-4-6", true}, // 大小写不敏感
+		{"claude-opus-4-5", false},
+		{"claude-sonnet-4-6", false},
+		{"gpt-5", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IsFastModeModel(tt.model); got != tt.want {
+			t.Errorf("IsFastModeModel(%q) = %v, 期望 %v", tt.model, got, tt.want)
+		}
+	}
+}
+
+func TestCalculateFastModeCost_Basic(t *testing.T) {
+	// 场景：Fast mode 基础输入/输出
+	// Input: 1000 × $30 / 1M = $0.030
+	// Output: 2000 × $150 / 1M = $0.300
+	// Total: $0.330
+	cost := CalculateFastModeCost(1000, 2000, 0, 0, 0)
+	expected := 0.330
+	if !floatEquals(cost, expected, 0.000001) {
+		t.Errorf("Fast mode 基础成本 = %.6f, 期望 %.6f", cost, expected)
+	}
+}
+
+func TestCalculateFastModeCost_WithCache(t *testing.T) {
+	// 场景：Fast mode + 缓存
+	// Input: 1000 × $30 / 1M = $0.030000
+	// Output: 500 × $150 / 1M = $0.075000
+	// Cache Read: 5000 × ($30 × 0.1) / 1M = $0.015000
+	// 5m Write: 2000 × ($30 × 1.25) / 1M = $0.075000
+	// 1h Write: 1000 × ($30 × 2.0) / 1M = $0.060000
+	// Total: $0.255000
+	cost := CalculateFastModeCost(1000, 500, 5000, 2000, 1000)
+	expected := 0.255
+	if !floatEquals(cost, expected, 0.000001) {
+		t.Errorf("Fast mode 缓存成本 = %.6f, 期望 %.6f", cost, expected)
+	}
+}
+
+func TestCalculateFastModeCost_VsStandard(t *testing.T) {
+	// 验证 fast mode 不使用 >200K 分段定价
+	// 标准模式 >200K: Input=$10, Output=$37.50
+	// Fast mode 统一: Input=$30, Output=$150
+	inputTokens := 250000 // >200K 阈值
+
+	standardCost := CalculateCostDetailed("claude-opus-4-6", inputTokens, 1000, 0, 0, 0)
+	fastCost := CalculateFastModeCost(inputTokens, 1000, 0, 0, 0)
+
+	// 标准: 250000×$10/1M + 1000×$37.50/1M = $2.5375
+	expectedStandard := 2.5375
+	if !floatEquals(standardCost, expectedStandard, 0.000001) {
+		t.Errorf("标准模式 >200K 成本 = %.6f, 期望 %.6f", standardCost, expectedStandard)
+	}
+
+	// Fast: 250000×$30/1M + 1000×$150/1M = $7.65
+	expectedFast := 7.65
+	if !floatEquals(fastCost, expectedFast, 0.000001) {
+		t.Errorf("Fast mode 成本 = %.6f, 期望 %.6f", fastCost, expectedFast)
+	}
+
+	// Fast 不应该是标准 ×6（因为标准 >200K 用了分段价格）
+	if floatEquals(fastCost, standardCost*6.0, 0.000001) {
+		t.Error("Fast mode 不应是标准成本的简单6倍（分段定价差异）")
+	}
+}
+
+func TestCalculateFastModeCost_NegativeTokens(t *testing.T) {
+	cost := CalculateFastModeCost(-1, 100, 0, 0, 0)
+	if cost != 0.0 {
+		t.Errorf("负数token应返回0, 实际 %.6f", cost)
+	}
+}
+
+func TestCalculateFastModeCost_ZeroTokens(t *testing.T) {
+	cost := CalculateFastModeCost(0, 0, 0, 0, 0)
+	if cost != 0.0 {
+		t.Errorf("零token应返回0, 实际 %.6f", cost)
+	}
+}

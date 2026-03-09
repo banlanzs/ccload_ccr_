@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var fetchModelsHTTPStatusPattern = regexp.MustCompile(`HTTP\s+(\d{3})`)
 
 // ============================================================
 // Admin API: 获取渠道可用模型列表
@@ -104,11 +108,12 @@ func (s *Server) HandleFetchModels(c *gin.Context) {
 		channelType = channel.ChannelType
 	}
 
-	// 从渠道配置读取格式转换配置
-	response, err := fetchModelsForConfig(
+	// 使用多URL故障转移机制，同时传递格式转换配置
+	response, err := s.fetchModelsWithURLFallback(
 		c.Request.Context(),
+		channel.ID,
+		channel.GetURLs(),
 		channelType,
-		channel.URL,
 		apiKey,
 		channel.EnableConversion,
 		channel.ConversionSourceFormat,
@@ -146,10 +151,17 @@ func (s *Server) HandleFetchModelsPreview(c *gin.Context) {
 		return
 	}
 
-	response, err := fetchModelsForConfig(
+	normalizedURL, err := validateChannelURLs(req.URL)
+	if err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, "url无效: "+err.Error())
+		return
+	}
+
+	response, err := s.fetchModelsWithURLFallback(
 		c.Request.Context(),
+		0,
+		strings.Split(normalizedURL, "\n"),
 		req.ChannelType,
-		req.URL,
 		req.APIKey,
 		req.EnableConversion,
 		req.ConversionSourceFormat,
@@ -261,11 +273,11 @@ func (s *Server) HandleBatchRefreshModels(c *gin.Context) {
 			channelType = cfg.ChannelType
 		}
 
-		// 从渠道配置读取格式转换配置
-		resp, err := fetchModelsForConfig(
+		resp, err := s.fetchModelsWithURLFallback(
 			ctx,
+			cfg.ID,
+			cfg.GetURLs(),
 			channelType,
-			cfg.URL,
 			apiKey,
 			cfg.EnableConversion,
 			cfg.ConversionSourceFormat,
@@ -337,6 +349,106 @@ func (s *Server) HandleBatchRefreshModels(c *gin.Context) {
 	})
 }
 
+// fetchModelsWithURLFallback 按URL排序顺序抓取模型列表。
+// 设计目标：多URL渠道下，单个URL异常不应导致整个管理操作失败。
+func (s *Server) fetchModelsWithURLFallback(
+	ctx context.Context,
+	channelID int64,
+	urls []string,
+	channelType, apiKey string,
+	enableConversion bool,
+	sourceFormat, targetFormat string,
+	enableCCR bool,
+	ccrTransformer string,
+) (*FetchModelsResponse, error) {
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("渠道URL为空")
+	}
+	if len(urls) == 1 {
+		return fetchModelsForConfig(ctx, channelType, urls[0], apiKey, enableConversion, sourceFormat, targetFormat, enableCCR, ccrTransformer)
+	}
+
+	selectorEnabled := s != nil && s.urlSelector != nil && channelID > 0
+	var selector *URLSelector
+	if selectorEnabled {
+		selector = s.urlSelector
+	}
+	sortedURLs := orderURLsWithSelector(selector, channelID, urls)
+
+	var lastErr error
+	for _, entry := range sortedURLs {
+		start := time.Now()
+		resp, err := fetchModelsForConfig(ctx, channelType, entry.url, apiKey, enableConversion, sourceFormat, targetFormat, enableCCR, ccrTransformer)
+		if err == nil {
+			if selectorEnabled {
+				latency := time.Since(start)
+				if latency <= 0 {
+					latency = time.Millisecond
+				}
+				s.urlSelector.RecordLatency(channelID, entry.url, latency)
+			}
+			return resp, nil
+		}
+		lastErr = err
+		if selectorEnabled && shouldCooldownURLOnFetchModelsError(err) {
+			s.urlSelector.CooldownURL(channelID, entry.url)
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("获取模型列表失败: 未找到可用URL")
+}
+
+func shouldCooldownURLOnFetchModelsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	if statusCode, body, ok := parseFetchModelsStatus(errMsg); ok {
+		classification := util.ClassifyHTTPResponseWithMeta(statusCode, nil, []byte(body))
+		return classification.Level == util.ErrorLevelChannel
+	}
+
+	msgLower := strings.ToLower(errMsg)
+	networkErrorMarkers := []string{
+		"请求失败:",
+		"读取响应失败:",
+		"context deadline exceeded",
+		"i/o timeout",
+		"connection refused",
+		"connection reset",
+		"no route to host",
+	}
+	for _, marker := range networkErrorMarkers {
+		if strings.Contains(msgLower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseFetchModelsStatus(errMsg string) (statusCode int, body string, ok bool) {
+	matches := fetchModelsHTTPStatusPattern.FindStringSubmatch(errMsg)
+	if len(matches) < 2 {
+		return 0, "", false
+	}
+
+	code, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, "", false
+	}
+
+	body = errMsg
+	if fullMatch := matches[0]; fullMatch != "" {
+		if idx := strings.Index(errMsg, fullMatch); idx >= 0 {
+			body = strings.TrimLeft(errMsg[idx+len(fullMatch):], "): \t")
+		}
+	}
+	return code, strings.TrimSpace(body), true
+}
+
 func fetchModelsForConfig(
 	ctx context.Context,
 	channelType, channelURL, apiKey string,
@@ -350,6 +462,7 @@ func fetchModelsForConfig(
 
 	normalizedType := util.NormalizeChannelType(effectiveFormat)
 	source := determineSource(effectiveFormat)
+
 
 	var (
 		modelNames []string

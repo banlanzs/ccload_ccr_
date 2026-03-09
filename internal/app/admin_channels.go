@@ -343,6 +343,31 @@ func (s *Server) handleGetChannelKeys(c *gin.Context, id int64) {
 	RespondJSON(c, http.StatusOK, apiKeys)
 }
 
+// HandleChannelURLStats 返回多URL渠道各URL的实时状态（延迟、冷却）
+// GET /admin/channels/:id/url-stats
+func (s *Server) HandleChannelURLStats(c *gin.Context) {
+	id, err := ParseInt64Param(c, "id")
+	if err != nil {
+		RespondErrorMsg(c, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	cfg, err := s.store.GetConfig(c.Request.Context(), id)
+	if err != nil {
+		RespondErrorMsg(c, http.StatusNotFound, "channel not found")
+		return
+	}
+
+	urls := cfg.GetURLs()
+	if len(urls) <= 1 {
+		RespondJSON(c, http.StatusOK, []URLStat{})
+		return
+	}
+
+	stats := s.urlSelector.GetURLStats(id, urls)
+	RespondJSON(c, http.StatusOK, stats)
+}
+
 // 更新渠道
 func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 	// 先获取现有配置
@@ -499,6 +524,11 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 		s.InvalidateAPIKeysCache(id)
 	}
 
+	// URL 更新后立即清理失效的 URLSelector 状态，避免旧URL状态长期残留。
+	if s.urlSelector != nil {
+		s.urlSelector.PruneChannel(id, upd.GetURLs())
+	}
+
 	RespondJSON(c, http.StatusOK, upd)
 }
 
@@ -511,6 +541,10 @@ func (s *Server) handleDeleteChannel(c *gin.Context, id int64) {
 	// 删除渠道对应的轮询计数器，避免KeySelector内部状态泄漏
 	if s.keySelector != nil {
 		s.keySelector.RemoveChannelCounter(id)
+	}
+	// 删除渠道时同步清理 URLSelector 内存状态。
+	if s.urlSelector != nil {
+		s.urlSelector.RemoveChannel(id)
 	}
 	// 删除渠道后刷新缓存，确保选择器立即生效
 	s.InvalidateChannelListCache()

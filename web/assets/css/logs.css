@@ -102,7 +102,9 @@
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     /* 输入/输出列统一宽度，方便对齐 */
@@ -139,6 +141,154 @@
       padding: var(--space-2) var(--space-1);
     }
 
+    .logs-pagination-controls {
+      gap: var(--space-1);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .logs-pagination-controls .btn-sm {
+      padding: 2px;
+      gap: 4px;
+      font-size: var(--text-sm);
+    }
+
+    .logs-pagination-controls svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .logs-pagination-info {
+      margin: 0 var(--space-2);
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      flex-wrap: wrap;
+      justify-content: center;
+      font-size: var(--text-sm);
+      font-weight: var(--font-normal);
+      color: var(--neutral-700);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .logs-pagination-info #logs_current_page2,
+    .logs-pagination-info #logs_total_pages2 {
+      display: inline-block;
+      min-width: 3ch;
+      text-align: center;
+      font-weight: var(--font-semibold);
+      color: var(--neutral-900);
+    }
+
+    .logs-pagination-separator {
+      margin-left: var(--space-1);
+      color: var(--neutral-400);
+    }
+
+    .logs-jump-input {
+      width: 84px;
+      padding: 4px 8px;
+      border: 1px solid var(--neutral-300);
+      border-radius: 4px;
+      text-align: center;
+      font-size: var(--text-sm);
+      color: var(--neutral-900);
+      background: rgba(255, 255, 255, 0.9);
+      color-scheme: light;
+      -webkit-text-fill-color: var(--neutral-900);
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+
+    .logs-jump-input:focus {
+      outline: none;
+      border-color: var(--primary-500);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      background: white;
+    }
+
+    .logs-jump-input::placeholder {
+      color: var(--neutral-400);
+    }
+
+    .logs-filter-controls {
+      gap: 10px;
+    }
+
+    .logs-filter-group {
+      flex: 1 1 180px;
+      min-width: 0;
+    }
+
+    .logs-filter-group .filter-input,
+    .logs-filter-group .filter-select {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .logs-filter-info {
+      white-space: nowrap;
+    }
+
+    .logs-filter-actions {
+      flex: none;
+    }
+
+    @media (max-width: 768px) {
+      .logs-filter-controls {
+        gap: 8px;
+      }
+
+      .logs-filter-group {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .logs-filter-group .filter-label {
+        margin-right: 0;
+        text-align: right;
+      }
+
+      .logs-filter-info {
+        width: 100%;
+        text-align: center;
+        justify-self: stretch;
+      }
+
+      .logs-filter-actions {
+        width: 100%;
+      }
+
+      .logs-filter-actions .btn {
+        width: 100%;
+      }
+
+      .logs-pagination-controls {
+        flex-direction: row;
+        gap: 6px;
+      }
+
+      .logs-pagination-controls .btn-sm {
+        padding: 2px;
+      }
+
+      .logs-pagination-info {
+        width: 100%;
+        margin: 0;
+        order: 3;
+      }
+
+      .logs-pagination-separator {
+        display: none;
+      }
+
+      .logs-jump-input {
+        width: 72px;
+      }
+    }
+
     .logs-table th {
       text-align: center;
     }
@@ -155,14 +305,16 @@
     /* 固定宽度列 */
     .logs-table th:nth-child(1),
     .logs-table td:nth-child(1) {
-      width: 150px;  /* 时间: YYYY/MM/DD HH:mm:ss */
-      min-width: 150px;
-      max-width: 150px;
+      width: 120px;
+      /* 时间: MM-DD HH:mm:ss */
+      min-width: 120px;
+      max-width: 120px;
     }
 
     .logs-table th:nth-child(2),
     .logs-table td:nth-child(2) {
-      width: 110px;  /* IP: xxx.xxx.*.* */
+      width: 110px;
+      /* IP: xxx.xxx.*.* */
       min-width: 110px;
       max-width: 110px;
       text-align: center;
@@ -170,16 +322,26 @@
 
     .logs-table th:nth-child(3),
     .logs-table td:nth-child(3) {
-      width: 120px;  /* API Key: xxxx...xxxx */
+      width: 120px;
+      /* API Key: xxxx...xxxx */
       min-width: 120px;
     }
 
     .logs-table th:nth-child(6),
     .logs-table td:nth-child(6) {
-      width: 60px;  /* 状态码: 200/403/500 */
+      width: 60px;
+      /* 状态码: 200/403/500 */
       min-width: 60px;
       max-width: 60px;
       text-align: center;
+    }
+
+    .logs-table th:nth-child(12),
+    .logs-table td:nth-child(12) {
+      width: 70px;
+      /* 成本 */
+      min-width: 70px;
+      max-width: 70px;
     }
 
     /* 模型标签样式 */
@@ -236,8 +398,15 @@
     }
 
     @keyframes pulse-pending {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
     }
 
     /* 进行中行高亮 */

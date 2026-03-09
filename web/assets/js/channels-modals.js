@@ -26,6 +26,12 @@ function showAddModal() {
   if (modelFilterInput) modelFilterInput.value = '';
   renderRedirectTable();
 
+  // 多URL支持
+  inlineURLTableData = [''];
+  selectedURLIndices.clear();
+  renderInlineURLTable();
+
+  // API Keys支持label格式
   inlineKeyTableData = [{ key: '', label: '' }];
   inlineKeyVisible = true;
   document.getElementById('inlineEyeIcon').style.display = 'none';
@@ -44,7 +50,13 @@ async function editChannel(id) {
 
   document.getElementById('modalTitle').textContent = window.t('channels.editChannel');
   document.getElementById('channelName').value = channel.name;
-  document.getElementById('channelUrl').value = channel.url;
+  setInlineURLTableData(channel.url);
+
+  // 多URL时异步加载URL实时状态（延迟、冷却）
+  const urlCount = getValidInlineURLs().length;
+  if (urlCount > 1) {
+    fetchURLStats(id);
+  }
 
   let apiKeys = [];
   try {
@@ -146,6 +158,13 @@ function closeModal() {
 async function saveChannel(event) {
   event.preventDefault();
 
+  // 多URL支持：验证至少有一个有效URL
+  const validURLs = getValidInlineURLs();
+  if (validURLs.length === 0) {
+    alert(window.t('channels.fillApiUrlFirst'));
+    return;
+  }
+
   // 构建API Keys数据（新格式：[{key, label}, ...]）
   const apiKeys = inlineKeyTableData
     .map(item => {
@@ -211,7 +230,7 @@ async function saveChannel(event) {
 
   const formData = {
     name: document.getElementById('channelName').value.trim(),
-    url: document.getElementById('channelUrl').value.trim(),
+    url: validURLs.join('\n'),
     api_key: apiKeysJSON,
     channel_type: channelType,
     key_strategy: keyStrategy,
@@ -686,7 +705,7 @@ async function copyChannel(id, name) {
   currentChannelKeyCooldowns = [];
   document.getElementById('modalTitle').textContent = window.t('channels.copyChannel');
   document.getElementById('channelName').value = copiedName;
-  document.getElementById('channelUrl').value = channel.url;
+  setInlineURLTableData(channel.url);
 
   let apiKeys = [];
   try {
@@ -1325,7 +1344,7 @@ function batchDeleteSelectedModels() {
 }
 
 async function fetchModelsFromAPI() {
-  const channelUrl = document.getElementById('channelUrl').value.trim();
+  const channelUrl = getValidInlineURLs()[0] || '';
   const channelType = document.querySelector('input[name="channelType"]:checked')?.value || 'anthropic';
   const firstValidKey = inlineKeyTableData
     .map(item => {
@@ -1450,7 +1469,8 @@ const COMMON_MODELS = {
     'gpt-5.1-codex-mini',
     'gpt-5.2',
     'gpt-5.2-codex',
-    'gpt-5.3-codex'
+    'gpt-5.3-codex',
+    'gpt-5.4'
   ],
   gemini: [
     'gemini-2.5-flash',

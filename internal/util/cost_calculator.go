@@ -67,6 +67,14 @@ var basePricing = map[string]ModelPricing{
 	"claude-haiku":  {InputPrice: 1.00, OutputPrice: 5.00},
 
 	// ========== OpenAI GPT-5系列 ==========
+	"gpt-5.4": {
+		InputPrice: 2.50, OutputPrice: 15.00,
+		InputPriceHigh: 5.00, OutputPriceHigh: 22.50, // >272K context
+	},
+	"gpt-5.4-pro": {
+		InputPrice: 30.00, OutputPrice: 180.00,
+		InputPriceHigh: 60.00, OutputPriceHigh: 270.00, // >272K context
+	},
 	"gpt-5.3":             {InputPrice: 1.75, OutputPrice: 14.00},
 	"gpt-5.3-codex":       {InputPrice: 1.75, OutputPrice: 14.00},
 	"gpt-5.3-codex-spark": {InputPrice: 1.75, OutputPrice: 14.00},
@@ -141,7 +149,8 @@ var basePricing = map[string]ModelPricing{
 		InputPrice: 2.00, OutputPrice: 12.00,
 		InputPriceHigh: 4.00, OutputPriceHigh: 18.00,
 	},
-	"gemini-3-flash": {InputPrice: 0.50, OutputPrice: 3.00},
+	"gemini-3-flash":        {InputPrice: 0.50, OutputPrice: 3.00},
+	"gemini-3.1-flash-lite": {InputPrice: 0.25, OutputPrice: 1.50},
 	"gemini-2.5-pro": {
 		InputPrice: 1.25, OutputPrice: 10.00,
 		InputPriceHigh: 2.50, OutputPriceHigh: 15.00,
@@ -470,11 +479,17 @@ const (
 	// qwenPlusTierThreshold Qwen Plus 系列分档阈值（tokens）
 	// 参考用户提供的价格表：0<Tokens<=256K 与 256K<Tokens<=1M
 	qwenPlusTierThreshold = 256_000
+
+	// gpt54TierThreshold GPT-5.4 系列分档阈值（tokens）
+	// 参考：<=272K 与 >272K context length
+	gpt54TierThreshold = 272_000
 )
 
 func getTierThresholdForModel(model string) int {
 	lowerModel := strings.ToLower(model)
 	switch {
+	case strings.HasPrefix(lowerModel, "gpt-5.4"):
+		return gpt54TierThreshold
 	case strings.HasPrefix(lowerModel, "qwen3.5-plus"),
 		strings.HasPrefix(lowerModel, "qwen-3.5-plus"),
 		strings.HasPrefix(lowerModel, "qwen-plus"):
@@ -593,12 +608,117 @@ func isOpenAIModel(model string) bool {
 		lowerModel == "computer-use-preview"
 }
 
+// serviceTierModels 列出支持 priority/flex service_tier 的 OpenAI 模型。
+// 来源：OpenAI 官方 Pricing 页 Priority 表（2026-03-06）。
+// 注意：gpt-5.4-pro 虽在表中出现但价格列为空，不算支持。
+var serviceTierModels = map[string]bool{
+	"gpt-5.4":           true,
+	"gpt-5.3-codex":     true,
+	"gpt-5.2":           true,
+	"gpt-5.2-codex":     true,
+	"gpt-5.1":           true,
+	"gpt-5.1-codex-max": true,
+	"gpt-5.1-codex":     true,
+	"gpt-5":             true,
+	"gpt-5-mini":        true,
+	"gpt-5-codex":       true,
+	"gpt-4.1":           true,
+	"gpt-4.1-mini":      true,
+	"gpt-4.1-nano":      true,
+	"gpt-4o":            true,
+	"gpt-4o-2024-05-13": true,
+	"gpt-4o-mini":       true,
+	"o3":                true,
+	"o4-mini":           true,
+}
+
+// modelSupportsTier 检查模型是否在 service_tier 白名单中。
+// 支持日期后缀变体：gpt-5.4-2026-03-01 匹配 gpt-5.4。
+// 非日期后缀（如 -pro、-nano）不会误匹配。
+func modelSupportsTier(model string) bool {
+	m := strings.ToLower(model)
+	if serviceTierModels[m] {
+		return true
+	}
+	// 逐段剥离日期后缀（纯数字段），尝试匹配白名单
+	for {
+		idx := strings.LastIndex(m, "-")
+		if idx <= 0 {
+			break
+		}
+		suffix := m[idx+1:]
+		if len(suffix) == 0 || suffix[0] < '0' || suffix[0] > '9' {
+			break // 非日期后缀，停止
+		}
+		m = m[:idx]
+		if serviceTierModels[m] {
+			return true
+		}
+	}
+	return false
+}
+
+// OpenAIServiceTierMultiplier 返回 OpenAI service_tier 的费用倍率。
+// priority=2x（加钱降延迟）, flex=0.5x（便宜但慢）, default/""=1x（标准）。
+// 仅当响应中携带 service_tier 字段时才生效。
+func OpenAIServiceTierMultiplier(model, serviceTier string) float64 {
+	if serviceTier == "" || serviceTier == "default" {
+		return 1.0
+	}
+	if !modelSupportsTier(model) {
+		return 1.0
+	}
+	switch serviceTier {
+	case "priority":
+		return 2.0
+	case "flex":
+		return 0.5
+	default:
+		return 1.0
+	}
+}
+
 // isOpusModel 判断是否为Claude Opus系列模型
 // Opus模型缓存定价与Sonnet/Haiku不同：无折扣(100%基础输入价格)
 // 参考：https://docs.claude.com/en/docs/about-claude/pricing
 func isOpusModel(model string) bool {
 	lowerModel := strings.ToLower(model)
 	return strings.Contains(lowerModel, "opus")
+}
+
+// IsFastModeModel 判断模型是否支持 Anthropic fast mode
+// 当前仅 claude-opus-4-6 支持 fast mode（2.5x输出速度，独立定价）
+func IsFastModeModel(model string) bool {
+	lowerModel := strings.ToLower(model)
+	return strings.HasPrefix(lowerModel, "claude-opus-4-6")
+}
+
+// CalculateFastModeCost 计算 Anthropic fast mode 的独立费用
+// Fast mode 使用全上下文统一定价（无 >200K 加价），缓存倍率叠加在 fast 价格之上
+// 参考: https://docs.anthropic.com/en/docs/about-claude/pricing
+func CalculateFastModeCost(inputTokens, outputTokens, cacheReadTokens, cache5mTokens, cache1hTokens int) float64 {
+	if inputTokens < 0 || outputTokens < 0 || cacheReadTokens < 0 || cache5mTokens < 0 || cache1hTokens < 0 {
+		return 0.0
+	}
+
+	// Fast mode 固定价格（全上下文统一，无 >200K 分段）
+	const inputPrice = 30.0   // $30/MTok
+	const outputPrice = 150.0 // $150/MTok
+
+	cost := float64(inputTokens)*inputPrice/1e6 + float64(outputTokens)*outputPrice/1e6
+
+	// 缓存倍率叠加在 fast mode 价格之上
+	if cacheReadTokens > 0 {
+		cost += float64(cacheReadTokens) * inputPrice * cacheReadMultiplierOpus / 1e6
+	}
+	if cache5mTokens > 0 {
+		cost += float64(cache5mTokens) * inputPrice * cacheWrite5mMultiplier / 1e6
+	}
+	if cache1hTokens > 0 {
+		cost += float64(cache1hTokens) * inputPrice * cacheWrite1hMultiplier / 1e6
+	}
+
+	return cost
 }
 
 // getOpenAICacheMultiplier 获取OpenAI模型的缓存价格倍数
@@ -660,13 +780,13 @@ func fuzzyMatchModel(model string) (ModelPricing, bool) {
 		"claude-opus", "claude-sonnet", "claude-haiku", // 通用兜底
 
 		// Gemini模型（按版本降序，更长的前缀优先）
-		"gemini-3-pro", "gemini-3-flash",
+		"gemini-3-pro", "gemini-3.1-flash-lite", "gemini-3-flash",
 		"gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro",
 		"gemini-2.0-flash-lite", "gemini-2.0-flash",
 		"gemini-1.5-pro", "gemini-1.5-flash",
 
 		// OpenAI GPT系列（更长的前缀优先，避免gpt-4o-legacy被gpt-4o截断）
-		"gpt-5-pro", "gpt-5-nano", "gpt-5-mini", "gpt-5",
+		"gpt-5-pro", "gpt-5-nano", "gpt-5-mini", "gpt-5.4-pro", "gpt-5.4", "gpt-5",
 		"gpt-4.1-nano", "gpt-4.1-mini", "gpt-4.1",
 		"gpt-4o-legacy", "gpt-4o-mini", "gpt-4o", // legacy必须在gpt-4o之前
 		"gpt-4-turbo", "gpt-4-32k", "gpt-4",

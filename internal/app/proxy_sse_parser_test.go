@@ -651,3 +651,145 @@ data: {"type":"message_delta","usage":{"output_tokens":100}}
 		t.Errorf("CacheCreationInputTokens = %d, 期望 500 (兼容字段)", parser.CacheCreationInputTokens)
 	}
 }
+
+func TestSSEUsageParser_ServiceTier(t *testing.T) {
+	// 测试从SSE流中提取 service_tier（OpenAI Chat Completions 格式）
+	sseData := `data: {"id":"chatcmpl-1","service_tier":"priority","choices":[]}
+
+data: {"id":"chatcmpl-1","service_tier":"priority","usage":{"prompt_tokens":100,"completion_tokens":50}}
+
+`
+	parser := newSSEUsageParser("openai")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "priority" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "priority")
+	}
+}
+
+func TestSSEUsageParser_ServiceTierFlex(t *testing.T) {
+	sseData := `data: {"id":"chatcmpl-2","service_tier":"flex","usage":{"prompt_tokens":200,"completion_tokens":100}}
+
+`
+	parser := newSSEUsageParser("openai")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "flex" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "flex")
+	}
+}
+
+func TestSSEUsageParser_ServiceTierDefault(t *testing.T) {
+	// 没有 service_tier 字段时应为空
+	sseData := `data: {"id":"chatcmpl-3","usage":{"prompt_tokens":50,"completion_tokens":25}}
+
+`
+	parser := newSSEUsageParser("openai")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "" {
+		t.Errorf("ServiceTier = %q, 期望空字符串", parser.ServiceTier)
+	}
+}
+
+func TestJSONUsageParser_ServiceTier(t *testing.T) {
+	// 测试JSON解析器提取 service_tier（非流式响应）
+	body := `{"id":"chatcmpl-4","model":"gpt-5","service_tier":"priority","usage":{"prompt_tokens":100,"completion_tokens":50}}`
+	parser := newJSONUsageParser("openai")
+	if err := parser.Feed([]byte(body)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	parser.GetUsage() // 触发解析
+	if parser.ServiceTier != "priority" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "priority")
+	}
+}
+
+func TestJSONUsageParser_ServiceTierResponsesAPI(t *testing.T) {
+	// 测试 Responses API 格式: service_tier 在 response 对象内
+	body := `{"type":"response.completed","response":{"id":"resp-1","service_tier":"flex","usage":{"input_tokens":100,"output_tokens":50}}}`
+	parser := newJSONUsageParser("openai")
+	if err := parser.Feed([]byte(body)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	parser.GetUsage()
+	if parser.ServiceTier != "flex" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "flex")
+	}
+}
+
+// ============================================================================
+// Anthropic Fast Mode speed 提取测试
+// ============================================================================
+
+func TestSSEUsageParser_SpeedFast(t *testing.T) {
+	// Anthropic fast mode: usage 中包含 speed:"fast"
+	sseData := `data: {"type":"message_delta","usage":{"input_tokens":100,"output_tokens":50,"speed":"fast"}}
+
+`
+	parser := newSSEUsageParser("anthropic")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "fast" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "fast")
+	}
+}
+
+func TestSSEUsageParser_SpeedStandard(t *testing.T) {
+	// speed:"standard" 不应设置 ServiceTier
+	sseData := `data: {"type":"message_delta","usage":{"input_tokens":100,"output_tokens":50,"speed":"standard"}}
+
+`
+	parser := newSSEUsageParser("anthropic")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "" {
+		t.Errorf("ServiceTier = %q, 期望空字符串（standard不设置tier）", parser.ServiceTier)
+	}
+}
+
+func TestSSEUsageParser_SpeedAbsent(t *testing.T) {
+	// 没有 speed 字段时 ServiceTier 应为空
+	sseData := `data: {"type":"message_delta","usage":{"input_tokens":100,"output_tokens":50}}
+
+`
+	parser := newSSEUsageParser("anthropic")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "" {
+		t.Errorf("ServiceTier = %q, 期望空字符串", parser.ServiceTier)
+	}
+}
+
+func TestJSONUsageParser_SpeedFast(t *testing.T) {
+	// JSON 解析器也应从 usage.speed 提取 fast
+	body := `{"type":"message","usage":{"input_tokens":200,"output_tokens":100,"speed":"fast"}}`
+	parser := newJSONUsageParser("anthropic")
+	if err := parser.Feed([]byte(body)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	parser.GetUsage()
+	if parser.ServiceTier != "fast" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "fast")
+	}
+}
+
+func TestSSEUsageParser_SpeedInMessageUsage(t *testing.T) {
+	// Anthropic message 格式: usage 在 message 对象内
+	sseData := `data: {"type":"message_start","message":{"usage":{"input_tokens":500,"output_tokens":0,"speed":"fast"}}}
+
+`
+	parser := newSSEUsageParser("anthropic")
+	if err := parser.Feed([]byte(sseData)); err != nil {
+		t.Fatalf("Feed失败: %v", err)
+	}
+	if parser.ServiceTier != "fast" {
+		t.Errorf("ServiceTier = %q, 期望 %q", parser.ServiceTier, "fast")
+	}
+}

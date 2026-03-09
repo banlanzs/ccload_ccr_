@@ -25,28 +25,52 @@ import (
 
 // HandleChannelTest 测试指定渠道的连通性
 func (s *Server) HandleChannelTest(c *gin.Context) {
-	// 解析渠道ID
+	s.handleChannelTestRequest(c, false)
+}
+
+// HandleChannelURLTest 测试指定渠道的单个 URL。
+func (s *Server) HandleChannelURLTest(c *gin.Context) {
+	s.handleChannelTestRequest(c, true)
+}
+
+func (s *Server) handleChannelTestRequest(c *gin.Context, requireBaseURL bool) {
 	id, err := ParseInt64Param(c, "id")
 	if err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, "invalid channel id")
 		return
 	}
 
-	// 解析请求体
 	var testReq testutil.TestChannelRequest
 	if err := BindAndValidate(c, &testReq); err != nil {
 		RespondErrorMsg(c, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
 
-	// 获取渠道配置
+	forcedBaseURL := strings.TrimSpace(testReq.BaseURL)
+	if requireBaseURL {
+		if forcedBaseURL == "" {
+			RespondErrorMsg(c, http.StatusBadRequest, "base_url is required for /admin/channels/:id/test-url")
+			return
+		}
+	} else if forcedBaseURL != "" {
+		RespondErrorMsg(c, http.StatusBadRequest, "base_url is not supported on /admin/channels/:id/test; use /admin/channels/:id/test-url")
+		return
+	}
+
 	cfg, err := s.store.GetConfig(c.Request.Context(), id)
 	if err != nil {
 		RespondError(c, http.StatusNotFound, fmt.Errorf("channel not found"))
 		return
 	}
+	if forcedBaseURL != "" {
+		normalizedBaseURL, err := validateChannelBaseURL(forcedBaseURL)
+		if err != nil {
+			RespondErrorMsg(c, http.StatusBadRequest, "invalid base_url: "+err.Error())
+			return
+		}
+		testReq.BaseURL = normalizedBaseURL
+	}
 
-	// 查询渠道的API Keys
 	apiKeys, err := s.store.GetAPIKeys(c.Request.Context(), id)
 	if err != nil || len(apiKeys) == 0 {
 		RespondJSON(c, http.StatusOK, gin.H{
@@ -56,15 +80,13 @@ func (s *Server) HandleChannelTest(c *gin.Context) {
 		return
 	}
 
-	// 验证并选择 Key 索引
 	keyIndex := testReq.KeyIndex
 	if keyIndex < 0 || keyIndex >= len(apiKeys) {
-		keyIndex = 0 // 默认使用第一个 Key
+		keyIndex = 0
 	}
 
 	selectedKey := apiKeys[keyIndex].APIKey
 
-	// 检查模型是否支持
 	if !cfg.SupportsModel(testReq.Model) {
 		RespondJSON(c, http.StatusOK, gin.H{
 			"success":          false,
@@ -75,28 +97,18 @@ func (s *Server) HandleChannelTest(c *gin.Context) {
 		return
 	}
 
-	// 执行测试（传递实际的API Key字符串）
 	testResult := s.testChannelAPI(c.Request.Context(), cfg, selectedKey, &testReq)
-	// 添加测试的 Key 索引信息到结果中
 	testResult["tested_key_index"] = keyIndex
 	testResult["total_keys"] = len(apiKeys)
 
-	// [INFO] 修复：根据测试结果应用冷却逻辑
 	if success, ok := testResult["success"].(bool); ok && success {
-		// 测试成功：清除该Key的冷却状态
 		if err := s.store.ResetKeyCooldown(c.Request.Context(), id, keyIndex); err != nil {
 			log.Printf("[WARN] 清除Key #%d冷却状态失败: %v", keyIndex, err)
 		}
 
-		// ✨ 优化：同时清除渠道级冷却（因为至少有一个Key可用）
-		// 设计理念：测试成功证明渠道恢复正常，应立即解除渠道级冷却，避免选择器过滤该渠道
 		_ = s.store.ResetChannelCooldown(c.Request.Context(), id)
-
-		// [INFO] 修复：统一使相关缓存失效，确保前端能立即看到状态更新
 		s.invalidateChannelRelatedCache(id)
 	} else {
-		// 🔥 修复：测试失败时应用冷却策略
-		// 提取状态码和错误体
 		statusCode, _ := testResult["status_code"].(int)
 		var errorBody []byte
 		if apiError, ok := testResult["api_error"].(map[string]any); ok {
@@ -105,7 +117,6 @@ func (s *Server) HandleChannelTest(c *gin.Context) {
 			errorBody = []byte(rawResp)
 		}
 
-		// 提取响应头（用于429错误的精确分类）
 		var headers map[string][]string
 		if respHeaders, ok := testResult["response_headers"].(map[string]string); ok && statusCode == 429 {
 			headers = make(map[string][]string, len(respHeaders))
@@ -114,17 +125,13 @@ func (s *Server) HandleChannelTest(c *gin.Context) {
 			}
 		}
 
-		// 调用统一冷却管理器处理错误
 		action := s.cooldownManager.HandleError(
 			c.Request.Context(),
 			httpErrorInputFromParts(id, keyIndex, statusCode, errorBody, headers),
 		)
 
-		// [INFO] 修复：统一使相关缓存失效，确保前端能立即看到冷却状态更新
-		// 无论是Key级冷却还是渠道级冷却，都需要使缓存失效
 		s.invalidateChannelRelatedCache(id)
 
-		// 记录冷却决策结果到测试响应中
 		var actionStr string
 		switch action {
 		case cooldown.ActionRetryKey:
@@ -181,8 +188,71 @@ func (s *Server) testChannelAPI(reqCtx context.Context, cfg *model.Config, apiKe
 		tester = &testutil.AnthropicTester{}
 	}
 
+	urls := cfg.GetURLs()
+	if forcedBaseURL := strings.TrimSpace(testReq.BaseURL); forcedBaseURL != "" {
+		urls = []string{forcedBaseURL}
+	}
+	if len(urls) == 0 {
+		return map[string]any{"success": false, "error": "渠道URL为空"}
+	}
+
+	var selector *URLSelector
+	if len(urls) > 1 && s != nil && s.urlSelector != nil {
+		selector = s.urlSelector
+	}
+	orderedURLs := orderURLsWithSelector(selector, cfg.ID, urls)
+
+	var lastResult map[string]any
+	for idx, entry := range orderedURLs {
+		attemptResult := s.testChannelAPIWithURL(reqCtx, cfg, apiKey, testReq, tester, channelType, entry.url)
+		success, _ := attemptResult["success"].(bool)
+		if success {
+			if selector != nil {
+				latency := pickURLSelectorLatency(attemptResult)
+				selector.RecordLatency(cfg.ID, entry.url, latency)
+			}
+			return attemptResult
+		}
+
+		lastResult = attemptResult
+		if idx == len(orderedURLs)-1 {
+			break
+		}
+
+		continueFallback, shouldCooldown := shouldFallbackToNextURL(attemptResult)
+		if shouldCooldown && selector != nil {
+			selector.CooldownURL(cfg.ID, entry.url)
+		}
+		if !continueFallback {
+			return attemptResult
+		}
+	}
+
+	if lastResult != nil {
+		return lastResult
+	}
+	return map[string]any{"success": false, "error": "渠道测试失败: 未找到可用URL"}
+}
+
+func (s *Server) testChannelAPIWithURL(
+	reqCtx context.Context,
+	cfg *model.Config,
+	apiKey string,
+	testReq *testutil.TestChannelRequest,
+	tester testutil.ChannelTester,
+	channelType, selectedURL string,
+) map[string]any {
+	// 仅构造测试请求必需字段，避免复制带锁 Config 结构体。
+	cfgForBuild := &model.Config{
+		ID:           cfg.ID,
+		Name:         cfg.Name,
+		ChannelType:  cfg.ChannelType,
+		URL:          selectedURL,
+		ModelEntries: append([]model.ModelEntry(nil), cfg.ModelEntries...),
+	}
+
 	// 构建请求（传递实际的API Key和重定向后的模型）
-	fullURL, baseHeaders, body, err := tester.Build(cfg, apiKey, testReq)
+	fullURL, baseHeaders, body, err := tester.Build(cfgForBuild, apiKey, testReq)
 	if err != nil {
 		return map[string]any{"success": false, "error": "构造测试请求失败: " + err.Error()}
 	}
@@ -488,4 +558,90 @@ func (s *Server) testChannelAPI(reqCtx context.Context, cfg *model.Config, apiKe
 		}
 	}
 	return parseNonStreamResponse(respBody)
+}
+
+func shouldFallbackToNextURL(result map[string]any) (continueFallback bool, shouldCooldown bool) {
+	statusCode, hasStatus := getResultInt(result["status_code"])
+	if !hasStatus {
+		errMsg, _ := result["error"].(string)
+		if strings.HasPrefix(errMsg, "网络请求失败:") || strings.HasPrefix(errMsg, "读取响应失败:") {
+			return true, true
+		}
+		return false, false
+	}
+
+	var errorBody []byte
+	if apiError, ok := result["api_error"].(map[string]any); ok {
+		errorBody, _ = sonic.Marshal(apiError)
+	} else if rawResp, ok := result["raw_response"].(string); ok {
+		errorBody = []byte(rawResp)
+	} else if errMsg, ok := result["error"].(string); ok {
+		errorBody = []byte(errMsg)
+	}
+
+	var headers map[string][]string
+	switch h := result["response_headers"].(type) {
+	case map[string]string:
+		headers = make(map[string][]string, len(h))
+		for k, v := range h {
+			headers[k] = []string{v}
+		}
+	case map[string]any:
+		headers = make(map[string][]string, len(h))
+		for k, v := range h {
+			if vs, ok := v.(string); ok {
+				headers[k] = []string{vs}
+			}
+		}
+	}
+
+	classification := util.ClassifyHTTPResponseWithMeta(statusCode, headers, errorBody)
+	switch classification.Level {
+	case util.ErrorLevelChannel:
+		return true, true
+	case util.ErrorLevelNone:
+		// 软错误场景：2xx 但业务层已标记 success=false，继续换URL尝试。
+		if statusCode >= 200 && statusCode < 300 {
+			return true, true
+		}
+		return false, false
+	default:
+		return false, false
+	}
+}
+
+func pickURLSelectorLatency(result map[string]any) time.Duration {
+	if ms, ok := getResultInt64(result["first_byte_duration_ms"]); ok && ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	if ms, ok := getResultInt64(result["duration_ms"]); ok && ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return time.Millisecond
+}
+
+func getResultInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func getResultInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
+	}
 }

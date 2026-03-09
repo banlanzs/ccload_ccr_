@@ -20,7 +20,7 @@ type ChannelRequest struct {
 	APIKey         string             `json:"api_key" binding:"required"`
 	ChannelType    string             `json:"channel_type,omitempty"` // 渠道类型:anthropic, codex, gemini
 	KeyStrategy    string             `json:"key_strategy,omitempty"` // Key使用策略:sequential, round_robin
-	URL            string             `json:"url" binding:"required,url"`
+	URL            string             `json:"url" binding:"required"`
 	Priority       int                `json:"priority"`
 	Models         []model.ModelEntry `json:"models" binding:"required,min=1"` // 模型配置（包含重定向）
 	Enabled        bool   `json:"enabled"`
@@ -65,6 +65,35 @@ func validateChannelBaseURL(raw string) (string, error) {
 	return u.Scheme + "://" + u.Host + normalizedPath, nil
 }
 
+// validateChannelURLs 校验换行分隔的多URL字段，逐个验证并标准化
+func validateChannelURLs(raw string) (string, error) {
+	if !strings.Contains(raw, "\n") {
+		return validateChannelBaseURL(raw)
+	}
+	lines := strings.Split(raw, "\n")
+	var normalized []string
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		u, err := validateChannelBaseURL(line)
+		if err != nil {
+			return "", err
+		}
+		if _, exists := seen[u]; exists {
+			continue
+		}
+		seen[u] = struct{}{}
+		normalized = append(normalized, u)
+	}
+	if len(normalized) == 0 {
+		return "", fmt.Errorf("url cannot be empty")
+	}
+	return strings.Join(normalized, "\n"), nil
+}
+
 // Validate 实现RequestValidator接口
 // [FIX] P0-1: 添加白名单校验和标准化（Fail-Fast + 边界防御）
 func (cr *ChannelRequest) Validate() error {
@@ -94,12 +123,8 @@ func (cr *ChannelRequest) Validate() error {
 		seenModels[modelKey] = i
 	}
 
-	// URL 验证规则（Fail-Fast 边界防御）：
-	// - 必须包含 scheme+host（http/https）
-	// - 禁止 userinfo、query、fragment
-	// - 禁止包含 /v1 的 path（防止误填 endpoint 如 /v1/messages）
-	// - 允许其他 path（如 /api, /openai 等用于反向代理或 API gateway）
-	normalizedURL, err := validateChannelBaseURL(cr.URL)
+	// URL 验证：支持换行分隔的多URL，逐个校验并标准化
+	normalizedURL, err := validateChannelURLs(cr.URL)
 	if err != nil {
 		return err
 	}
