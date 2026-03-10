@@ -6,6 +6,10 @@
   padding: 20px;
 }
 
+body.top-layout .container {
+  padding-top: calc(var(--topbar-height) + 20px);
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
