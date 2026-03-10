@@ -140,6 +140,11 @@ func (r *ModelResolver) Resolve(ctx context.Context, virtualModelName string, re
 				continue
 			}
 
+			// 检查渠道是否被排除
+			if rule.ShouldExcludeChannel(cfg.ID, cfg.Tags, cfg.Name) {
+				continue
+			}
+
 			resolvedModel, matched := resolveModelByRule(cfg, rule)
 			if !matched {
 				continue

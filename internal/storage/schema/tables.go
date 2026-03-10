@@ -172,6 +172,9 @@ func DefineModelAssociationsTable() *TableBuilder {
 		Column("pattern VARCHAR(256) NOT NULL").
 		Column("priority INT NOT NULL DEFAULT 0").
 		Column("enabled TINYINT NOT NULL DEFAULT 1").
+		Column("exclude_channel_ids TEXT NOT NULL DEFAULT ''").     // 排除的渠道ID，逗号分隔
+		Column("exclude_channel_tags TEXT NOT NULL DEFAULT ''").    // 排除的渠道标签，逗号分隔
+		Column("exclude_channel_name_pattern VARCHAR(256) NOT NULL DEFAULT ''"). // 排除的渠道名称模式（正则）
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Column("FOREIGN KEY (virtual_model_id) REFERENCES virtual_models(id) ON DELETE CASCADE").

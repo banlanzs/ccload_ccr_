@@ -172,7 +172,8 @@ func (s *SQLStore) DeleteVirtualModel(ctx context.Context, id int64) error {
 // ListModelAssociations 获取指定虚拟模型的关联规则列表
 func (s *SQLStore) ListModelAssociations(ctx context.Context, virtualModelID int64) ([]*model.ModelAssociation, error) {
 	query := `
-		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled, created_at, updated_at
+		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled,
+		       exclude_channel_ids, exclude_channel_tags, exclude_channel_name_pattern, created_at, updated_at
 		FROM model_associations
 		WHERE virtual_model_id = ?
 		ORDER BY priority DESC, id ASC
@@ -189,7 +190,8 @@ func (s *SQLStore) ListModelAssociations(ctx context.Context, virtualModelID int
 		var createdAt, updatedAt int64
 		var matchType string
 		if err := rows.Scan(&ma.ID, &ma.VirtualModelID, &ma.ChannelID, &ma.ChannelTags, &matchType, &ma.Pattern,
-			&ma.Priority, &ma.Enabled, &createdAt, &updatedAt); err != nil {
+			&ma.Priority, &ma.Enabled, &ma.ExcludeChannelIDs, &ma.ExcludeChannelTags, &ma.ExcludeChannelNamePattern,
+			&createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		ma.MatchType = model.MatchType(matchType)
@@ -206,7 +208,8 @@ func (s *SQLStore) ListModelAssociations(ctx context.Context, virtualModelID int
 // ListAllModelAssociations 获取所有关联规则列表
 func (s *SQLStore) ListAllModelAssociations(ctx context.Context) ([]*model.ModelAssociation, error) {
 	query := `
-		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled, created_at, updated_at
+		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled,
+		       exclude_channel_ids, exclude_channel_tags, exclude_channel_name_pattern, created_at, updated_at
 		FROM model_associations
 		ORDER BY priority DESC, id ASC
 	`
@@ -222,7 +225,8 @@ func (s *SQLStore) ListAllModelAssociations(ctx context.Context) ([]*model.Model
 		var createdAt, updatedAt int64
 		var matchType string
 		if err := rows.Scan(&ma.ID, &ma.VirtualModelID, &ma.ChannelID, &ma.ChannelTags, &matchType, &ma.Pattern,
-			&ma.Priority, &ma.Enabled, &createdAt, &updatedAt); err != nil {
+			&ma.Priority, &ma.Enabled, &ma.ExcludeChannelIDs, &ma.ExcludeChannelTags, &ma.ExcludeChannelNamePattern,
+			&createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		ma.MatchType = model.MatchType(matchType)
@@ -239,7 +243,8 @@ func (s *SQLStore) ListAllModelAssociations(ctx context.Context) ([]*model.Model
 // GetModelAssociation 根据ID获取关联规则
 func (s *SQLStore) GetModelAssociation(ctx context.Context, id int64) (*model.ModelAssociation, error) {
 	query := `
-		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled, created_at, updated_at
+		SELECT id, virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled,
+		       exclude_channel_ids, exclude_channel_tags, exclude_channel_name_pattern, created_at, updated_at
 		FROM model_associations
 		WHERE id = ?
 	`
@@ -248,7 +253,8 @@ func (s *SQLStore) GetModelAssociation(ctx context.Context, id int64) (*model.Mo
 	var matchType string
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&ma.ID, &ma.VirtualModelID, &ma.ChannelID, &ma.ChannelTags, &matchType, &ma.Pattern,
-		&ma.Priority, &ma.Enabled, &createdAt, &updatedAt,
+		&ma.Priority, &ma.Enabled, &ma.ExcludeChannelIDs, &ma.ExcludeChannelTags, &ma.ExcludeChannelNamePattern,
+		&createdAt, &updatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -267,12 +273,14 @@ func (s *SQLStore) CreateModelAssociation(ctx context.Context, ma *model.ModelAs
 	nowUnix := timeToUnix(time.Now())
 
 	query := `
-		INSERT INTO model_associations(virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO model_associations(virtual_model_id, channel_id, channel_tags, match_type, pattern, priority, enabled,
+		                               exclude_channel_ids, exclude_channel_tags, exclude_channel_name_pattern, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := s.db.ExecContext(ctx, query,
 		ma.VirtualModelID, ma.ChannelID, ma.ChannelTags, string(ma.MatchType), ma.Pattern,
-		ma.Priority, boolToInt(ma.Enabled), nowUnix, nowUnix,
+		ma.Priority, boolToInt(ma.Enabled), ma.ExcludeChannelIDs, ma.ExcludeChannelTags, ma.ExcludeChannelNamePattern,
+		nowUnix, nowUnix,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate") {
@@ -303,12 +311,14 @@ func (s *SQLStore) UpdateModelAssociation(ctx context.Context, id int64, ma *mod
 
 	query := `
 		UPDATE model_associations
-		SET virtual_model_id=?, channel_id=?, channel_tags=?, match_type=?, pattern=?, priority=?, enabled=?, updated_at=?
+		SET virtual_model_id=?, channel_id=?, channel_tags=?, match_type=?, pattern=?, priority=?, enabled=?,
+		    exclude_channel_ids=?, exclude_channel_tags=?, exclude_channel_name_pattern=?, updated_at=?
 		WHERE id=?
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		ma.VirtualModelID, ma.ChannelID, ma.ChannelTags, string(ma.MatchType), ma.Pattern,
-		ma.Priority, boolToInt(ma.Enabled), updatedAtUnix, id,
+		ma.Priority, boolToInt(ma.Enabled), ma.ExcludeChannelIDs, ma.ExcludeChannelTags, ma.ExcludeChannelNamePattern,
+		updatedAtUnix, id,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "Duplicate") {
@@ -341,6 +351,7 @@ func (s *SQLStore) DeleteModelAssociation(ctx context.Context, id int64) error {
 func (s *SQLStore) ListModelAssociationsWithDetails(ctx context.Context, virtualModelID int64) ([]*model.ModelAssociationWithDetails, error) {
 	query := `
 		SELECT ma.id, ma.virtual_model_id, ma.channel_id, ma.channel_tags, ma.match_type, ma.pattern, ma.priority, ma.enabled,
+		       ma.exclude_channel_ids, ma.exclude_channel_tags, ma.exclude_channel_name_pattern,
 		       ma.created_at, ma.updated_at, vm.name AS virtual_model_name, c.name AS channel_name
 		FROM model_associations ma
 		LEFT JOIN virtual_models vm ON ma.virtual_model_id = vm.id
@@ -359,14 +370,21 @@ func (s *SQLStore) ListModelAssociationsWithDetails(ctx context.Context, virtual
 		mad := &model.ModelAssociationWithDetails{}
 		var createdAt, updatedAt int64
 		var matchType string
+		var virtualModelName, channelName sql.NullString
 		if err := rows.Scan(&mad.ID, &mad.VirtualModelID, &mad.ChannelID, &mad.ChannelTags, &matchType, &mad.Pattern,
-			&mad.Priority, &mad.Enabled, &createdAt, &updatedAt,
-			&mad.VirtualModelName, &mad.ChannelName); err != nil {
+			&mad.Priority, &mad.Enabled, &mad.ExcludeChannelIDs, &mad.ExcludeChannelTags, &mad.ExcludeChannelNamePattern,
+			&createdAt, &updatedAt, &virtualModelName, &channelName); err != nil {
 			return nil, err
 		}
 		mad.MatchType = model.MatchType(matchType)
 		mad.CreatedAt = model.JSONTime{Time: unixToTime(createdAt)}
 		mad.UpdatedAt = model.JSONTime{Time: unixToTime(updatedAt)}
+		if virtualModelName.Valid {
+			mad.VirtualModelName = virtualModelName.String
+		}
+		if channelName.Valid {
+			mad.ChannelName = channelName.String
+		}
 		associations = append(associations, mad)
 	}
 	if err := rows.Err(); err != nil {

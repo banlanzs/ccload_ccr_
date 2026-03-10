@@ -2,6 +2,8 @@ package model
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -68,16 +70,19 @@ func (m MatchType) IsValid() bool {
 
 // ModelAssociation 模型关联规则
 type ModelAssociation struct {
-	ID             int64     `json:"id"`
-	VirtualModelID int64     `json:"virtual_model_id"` // 虚拟模型ID
-	ChannelID      int64     `json:"channel_id"`       // 渠道ID（0表示全局匹配）
-	ChannelTags    string    `json:"channel_tags"`     // 渠道标签（逗号分隔，用于标签匹配）
-	MatchType      MatchType `json:"match_type"`       // 匹配类型
-	Pattern        string    `json:"pattern"`          // 匹配模式
-	Priority       int       `json:"priority"`         // 优先级（数值越大优先级越高）
-	Enabled        bool      `json:"enabled"`          // 是否启用
-	CreatedAt      JSONTime  `json:"created_at"`
-	UpdatedAt      JSONTime  `json:"updated_at"`
+	ID                        int64     `json:"id"`
+	VirtualModelID            int64     `json:"virtual_model_id"` // 虚拟模型ID
+	ChannelID                 int64     `json:"channel_id"`       // 渠道ID（0表示全局匹配）
+	ChannelTags               string    `json:"channel_tags"`     // 渠道标签（逗号分隔，用于标签匹配）
+	MatchType                 MatchType `json:"match_type"`       // 匹配类型
+	Pattern                   string    `json:"pattern"`          // 匹配模式
+	Priority                  int       `json:"priority"`         // 优先级（数值越大优先级越高）
+	Enabled                   bool      `json:"enabled"`          // 是否启用
+	ExcludeChannelIDs         string    `json:"exclude_channel_ids,omitempty"`         // 排除的渠道ID列表（逗号分隔）
+	ExcludeChannelTags        string    `json:"exclude_channel_tags,omitempty"`        // 排除的渠道标签（逗号分隔）
+	ExcludeChannelNamePattern string    `json:"exclude_channel_name_pattern,omitempty"` // 排除的渠道名称模式（正则）
+	CreatedAt                 JSONTime  `json:"created_at"`
+	UpdatedAt                 JSONTime  `json:"updated_at"`
 }
 
 // IsGlobalMatch 判断是否为全局匹配
@@ -164,4 +169,40 @@ func FormatTags(tags []string) string {
 		}
 	}
 	return strings.Join(filtered, ",")
+}
+
+// ShouldExcludeChannel 检查渠道是否应该被排除
+func (m *ModelAssociation) ShouldExcludeChannel(channelID int64, channelTags []string, channelName string) bool {
+	// 检查渠道ID排除
+	if m.ExcludeChannelIDs != "" {
+		excludedIDs := ParseTags(m.ExcludeChannelIDs)
+		channelIDStr := strconv.FormatInt(channelID, 10)
+		for _, id := range excludedIDs {
+			if id == channelIDStr {
+				return true
+			}
+		}
+	}
+
+	// 检查标签排除
+	if m.ExcludeChannelTags != "" {
+		excludedTags := ParseTags(m.ExcludeChannelTags)
+		for _, tag := range channelTags {
+			for _, excluded := range excludedTags {
+				if tag == excluded {
+					return true
+				}
+			}
+		}
+	}
+
+	// 检查渠道名称模式排除
+	if m.ExcludeChannelNamePattern != "" {
+		re, err := regexp.Compile(m.ExcludeChannelNamePattern)
+		if err == nil && re.MatchString(channelName) {
+			return true
+		}
+	}
+
+	return false
 }

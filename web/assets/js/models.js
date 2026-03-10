@@ -385,6 +385,9 @@ function openAssociationEditModal(id) {
   const patternInput = document.getElementById('associationPattern');
   const priorityInput = document.getElementById('associationPriority');
   const enabledInput = document.getElementById('associationEnabled');
+  const excludeChannelIdsInput = document.getElementById('excludeChannelIds');
+  const excludeChannelTagsInput = document.getElementById('excludeChannelTags');
+  const excludeChannelNamePatternInput = document.getElementById('excludeChannelNamePattern');
 
   if (!title || !idInput || !scopeInput || !channelIdInput || !channelTagsInput ||
       !typeInput || !patternInput || !priorityInput || !enabledInput) return;
@@ -397,6 +400,11 @@ function openAssociationEditModal(id) {
   patternInput.value = '';
   priorityInput.value = '100';
   enabledInput.checked = true;
+
+  // 清空排除字段
+  if (excludeChannelIdsInput) excludeChannelIdsInput.value = '';
+  if (excludeChannelTagsInput) excludeChannelTagsInput.value = '';
+  if (excludeChannelNamePatternInput) excludeChannelNamePatternInput.value = '';
 
   if (id) {
     const assoc = currentAssociations.find((a) => Number(a.id) === Number(id));
@@ -423,6 +431,11 @@ function openAssociationEditModal(id) {
       patternInput.value = assoc.pattern || '';
       priorityInput.value = String(assoc.priority ?? 100);
       enabledInput.checked = !!assoc.enabled;
+
+      // 加载排除字段
+      if (excludeChannelIdsInput) excludeChannelIdsInput.value = assoc.exclude_channel_ids || '';
+      if (excludeChannelTagsInput) excludeChannelTagsInput.value = assoc.exclude_channel_tags || '';
+      if (excludeChannelNamePatternInput) excludeChannelNamePatternInput.value = assoc.exclude_channel_name_pattern || '';
     }
   } else {
     title.textContent = t('models.addAssociation');
@@ -440,6 +453,11 @@ async function saveAssociation() {
   const pattern = document.getElementById('associationPattern')?.value?.trim() || '';
   const priority = Number(document.getElementById('associationPriority')?.value || 0);
   const enabled = !!document.getElementById('associationEnabled')?.checked;
+
+  // 获取排除字段
+  const excludeChannelIds = document.getElementById('excludeChannelIds')?.value?.trim() || '';
+  const excludeChannelTags = document.getElementById('excludeChannelTags')?.value?.trim() || '';
+  const excludeChannelNamePattern = document.getElementById('excludeChannelNamePattern')?.value?.trim() || '';
 
   let channelId = 0;
   let channelTags = '';
@@ -470,7 +488,10 @@ async function saveAssociation() {
     match_type: matchType,
     pattern,
     priority,
-    enabled
+    enabled,
+    exclude_channel_ids: excludeChannelIds,
+    exclude_channel_tags: excludeChannelTags,
+    exclude_channel_name_pattern: excludeChannelNamePattern
   };
 
   try {

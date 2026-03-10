@@ -148,6 +148,35 @@
             <small class="form-text" data-i18n="models.priorityHelp">数值越大优先级越高</small>
           </div>
 
+          <hr style="margin: 1rem 0;" />
+
+          <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem;" data-i18n="models.excludeRules">排除规则</h4>
+          <p style="font-size: 0.85rem; color: #666; margin-bottom: 1rem;" data-i18n="models.excludeRulesHelp">匹配成功的渠道如果满足排除条件将被跳过</p>
+
+          <div class="form-group" id="excludeChannelIdsGroup">
+            <label for="excludeChannelIds" data-i18n="models.excludeChannelIds">排除渠道ID</label>
+            <input type="text" id="excludeChannelIds" class="form-control"
+              data-i18n-placeholder="models.excludeChannelIdsPlaceholder"
+              placeholder="逗号分隔，如: 1,3,5" />
+            <small class="form-text" data-i18n="models.excludeChannelIdsHelp">输入要排除的渠道ID，逗号分隔</small>
+          </div>
+
+          <div class="form-group" id="excludeChannelTagsGroup">
+            <label for="excludeChannelTags" data-i18n="models.excludeChannelTags">排除渠道标签</label>
+            <input type="text" id="excludeChannelTags" class="form-control"
+              data-i18n-placeholder="models.excludeChannelTagsPlaceholder"
+              placeholder="逗号分隔，如: test,deprecated" />
+            <small class="form-text" data-i18n="models.excludeChannelTagsHelp">输入要排除的渠道标签，逗号分隔</small>
+          </div>
+
+          <div class="form-group" id="excludeChannelNamePatternGroup">
+            <label for="excludeChannelNamePattern" data-i18n="models.excludeChannelNamePattern">排除渠道名称模式</label>
+            <input type="text" id="excludeChannelNamePattern" class="form-control"
+              data-i18n-placeholder="models.excludeChannelNamePatternPlaceholder"
+              placeholder="正则表达式，如: ^test-.*" />
+            <small class="form-text" data-i18n="models.excludeChannelNamePatternHelp">使用正则表达式匹配要排除的渠道名称</small>
+          </div>
+
           <div class="form-group">
             <label>
               <input type="checkbox" id="associationEnabled" checked />

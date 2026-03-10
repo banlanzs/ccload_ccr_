@@ -142,6 +142,10 @@ func migrate(ctx context.Context, db *sql.DB, dialect Dialect) error {
 			if err := ensureModelAssociationsChannelTags(ctx, db, dialect); err != nil {
 				return fmt.Errorf("migrate model_associations channel_tags: %w", err)
 			}
+			// 增量迁移：model_associations表添加排除字段（2026-03新增）
+			if err := ensureModelAssociationsExcludeFields(ctx, db, dialect); err != nil {
+				return fmt.Errorf("migrate model_associations exclude fields: %w", err)
+			}
 		}
 
 		// 创建索引
@@ -1381,5 +1385,22 @@ func ensureAPIKeysLabel(ctx context.Context, db *sql.DB, dialect Dialect) error 
 
 	return ensureSQLiteColumns(ctx, db, "api_keys", []sqliteColumnDef{
 		{name: "label", definition: "TEXT NOT NULL DEFAULT ''"},
+	})
+}
+
+// ensureModelAssociationsExcludeFields 确保model_associations表有排除字段（2026-03新增）
+func ensureModelAssociationsExcludeFields(ctx context.Context, db *sql.DB, dialect Dialect) error {
+	if dialect == DialectMySQL {
+		return ensureMySQLColumns(ctx, db, "model_associations", []mysqlColumnDef{
+			{name: "exclude_channel_ids", definition: "TEXT NOT NULL DEFAULT ''"},
+			{name: "exclude_channel_tags", definition: "TEXT NOT NULL DEFAULT ''"},
+			{name: "exclude_channel_name_pattern", definition: "VARCHAR(256) NOT NULL DEFAULT ''"},
+		})
+	}
+
+	return ensureSQLiteColumns(ctx, db, "model_associations", []sqliteColumnDef{
+		{name: "exclude_channel_ids", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "exclude_channel_tags", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "exclude_channel_name_pattern", definition: "TEXT NOT NULL DEFAULT ''"},
 	})
 }
