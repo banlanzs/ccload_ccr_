@@ -17,6 +17,7 @@ func DefineChannelsTable() *TableBuilder {
 		Column("enable_conversion TINYINT NOT NULL DEFAULT 0").
 		Column("conversion_source_format VARCHAR(32) NOT NULL DEFAULT ''").
 		Column("conversion_target_format VARCHAR(32) NOT NULL DEFAULT ''").
+		Column("tags TEXT NOT NULL DEFAULT ''").
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Index("idx_channels_enabled", "enabled").
@@ -165,7 +166,8 @@ func DefineModelAssociationsTable() *TableBuilder {
 	return NewTable("model_associations").
 		Column("id INT PRIMARY KEY AUTO_INCREMENT").
 		Column("virtual_model_id INT NOT NULL").
-		Column("channel_id INT NOT NULL").
+		Column("channel_id INT NOT NULL DEFAULT 0").
+		Column("channel_tags TEXT NOT NULL DEFAULT ''").
 		Column("match_type VARCHAR(32) NOT NULL").
 		Column("pattern VARCHAR(256) NOT NULL").
 		Column("priority INT NOT NULL DEFAULT 0").
@@ -173,9 +175,8 @@ func DefineModelAssociationsTable() *TableBuilder {
 		Column("created_at BIGINT NOT NULL").
 		Column("updated_at BIGINT NOT NULL").
 		Column("FOREIGN KEY (virtual_model_id) REFERENCES virtual_models(id) ON DELETE CASCADE").
-		Column("FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE").
-		Column("UNIQUE KEY uk_virtual_channel_match_pattern (virtual_model_id, channel_id, match_type, pattern)").
 		Index("idx_model_associations_virtual_model", "virtual_model_id").
+		Index("idx_model_associations_channel", "channel_id").
 		Index("idx_model_associations_enabled", "enabled").
 		Index("idx_model_associations_priority", "priority DESC")
 }

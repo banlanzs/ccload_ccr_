@@ -85,35 +85,80 @@ func (r *ModelResolver) Resolve(ctx context.Context, virtualModelName string, re
 			continue
 		}
 
-		cfg, err := r.store.GetConfig(ctx, rule.ChannelID)
-		if err != nil || cfg == nil || !cfg.Enabled {
-			continue
-		}
-		if normalizedType != "" && cfg.GetChannelType() != normalizedType {
-			continue
-		}
-		if _, exists := seenChannels[cfg.ID]; exists {
-			continue
+		// 根据匹配类型获取候选渠道列表
+		var channels []*model.Config
+
+		if rule.IsChannelMatch() {
+			// 渠道内匹配：只检查指定渠道
+			cfg, err := r.store.GetConfig(ctx, rule.ChannelID)
+			if err != nil || cfg == nil || !cfg.Enabled {
+				continue
+			}
+			if normalizedType != "" && cfg.GetChannelType() != normalizedType {
+				continue
+			}
+			channels = []*model.Config{cfg}
+		} else if rule.IsChannelTagsMatch() {
+			// 标签匹配：获取所有启用渠道并过滤标签
+			allChannels, err := r.store.ListConfigs(ctx)
+			if err != nil {
+				continue
+			}
+			requiredTags := model.ParseTags(rule.ChannelTags)
+			for _, cfg := range allChannels {
+				if !cfg.Enabled {
+					continue
+				}
+				if normalizedType != "" && cfg.GetChannelType() != normalizedType {
+					continue
+				}
+				// 检查渠道是否包含所有必需标签
+				if containsAllTags(cfg.Tags, requiredTags) {
+					channels = append(channels, cfg)
+				}
+			}
+		} else {
+			// 全局匹配：获取所有启用渠道
+			allChannels, err := r.store.ListConfigs(ctx)
+			if err != nil {
+				continue
+			}
+			for _, cfg := range allChannels {
+				if !cfg.Enabled {
+					continue
+				}
+				if normalizedType != "" && cfg.GetChannelType() != normalizedType {
+					continue
+				}
+				channels = append(channels, cfg)
+			}
 		}
 
-		resolvedModel, matched := resolveModelByRule(cfg, rule)
-		if !matched {
-			continue
-		}
+		// 对每个候选渠道应用规则匹配
+		for _, cfg := range channels {
+			if _, exists := seenChannels[cfg.ID]; exists {
+				continue
+			}
 
-		clonedCfg := cloneConfigWithVirtualMapping(cfg, virtualModelName, resolvedModel)
-		candidates = append(candidates, &ResolvedAssociationCandidate{
-			Config:        clonedCfg,
-			VirtualModel:  virtualModelName,
-			ResolvedModel: resolvedModel,
-			ChannelID:     cfg.ID,
-			ChannelName:   cfg.Name,
-			RuleID:        rule.ID,
-			MatchType:     rule.MatchType,
-			Pattern:       rule.Pattern,
-			Priority:      rule.Priority,
-		})
-		seenChannels[cfg.ID] = struct{}{}
+			resolvedModel, matched := resolveModelByRule(cfg, rule)
+			if !matched {
+				continue
+			}
+
+			clonedCfg := cloneConfigWithVirtualMapping(cfg, virtualModelName, resolvedModel)
+			candidates = append(candidates, &ResolvedAssociationCandidate{
+				Config:        clonedCfg,
+				VirtualModel:  virtualModelName,
+				ResolvedModel: resolvedModel,
+				ChannelID:     cfg.ID,
+				ChannelName:   cfg.Name,
+				RuleID:        rule.ID,
+				MatchType:     rule.MatchType,
+				Pattern:       rule.Pattern,
+				Priority:      rule.Priority,
+			})
+			seenChannels[cfg.ID] = struct{}{}
+		}
 	}
 
 	return candidates, nil
@@ -230,4 +275,21 @@ func matchTypeWeight(matchType model.MatchType) int {
 	default:
 		return 100
 	}
+}
+
+// containsAllTags 检查 channelTags 是否包含 requiredTags 中的所有标签
+func containsAllTags(channelTags, requiredTags []string) bool {
+	if len(requiredTags) == 0 {
+		return false
+	}
+	tagSet := make(map[string]struct{}, len(channelTags))
+	for _, tag := range channelTags {
+		tagSet[strings.TrimSpace(tag)] = struct{}{}
+	}
+	for _, required := range requiredTags {
+		if _, exists := tagSet[strings.TrimSpace(required)]; !exists {
+			return false
+		}
+	}
+	return true
 }

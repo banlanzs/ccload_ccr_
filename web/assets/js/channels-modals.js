@@ -104,6 +104,7 @@ async function editChannel(id) {
   }
   document.getElementById('channelPriority').value = channel.priority;
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
+  document.getElementById('channelTags').value = (channel.tags || []).join(', ');
   document.getElementById('channelEnabled').checked = channel.enabled;
 
   // 如果启用了 CCR 或格式转换，自动展开高级设置
@@ -228,6 +229,10 @@ async function saveChannel(event) {
   const conversionSourceFormat = document.getElementById('channelConversionSourceFormat').value;
   const conversionTargetFormat = document.getElementById('channelConversionTargetFormat').value;
 
+  // Parse tags from comma-separated string
+  const tagsInput = document.getElementById('channelTags').value || '';
+  const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+
   const formData = {
     name: document.getElementById('channelName').value.trim(),
     url: validURLs.join('\n'),
@@ -236,6 +241,7 @@ async function saveChannel(event) {
     key_strategy: keyStrategy,
     priority: parseInt(document.getElementById('channelPriority').value) || 0,
     daily_cost_limit: parseFloat(document.getElementById('channelDailyCostLimit').value) || 0,
+    tags: tags,
     models: models,
     enabled: document.getElementById('channelEnabled').checked,
     enable_ccr: enableCCR,
@@ -783,6 +789,7 @@ async function copyChannel(id, name) {
   }
   document.getElementById('channelPriority').value = channel.priority;
   document.getElementById('channelDailyCostLimit').value = channel.daily_cost_limit || 0;
+  document.getElementById('channelTags').value = (channel.tags || []).join(', ');
   document.getElementById('channelEnabled').checked = true;
 
   // 如果启用了 CCR 或格式转换，自动展开高级设置

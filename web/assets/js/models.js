@@ -160,13 +160,23 @@ function renderAssociations() {
   container.innerHTML = currentAssociations.map((assoc) => {
     const id = Number(assoc.id) || 0;
     const enabled = !!assoc.enabled;
-    const channelName = assoc.channel_name || `#${assoc.channel_id || '-'} `;
+    const channelId = Number(assoc.channel_id || 0);
+    const channelTags = assoc.channel_tags || '';
+    let channelInfo = '';
+
+    if (channelId > 0) {
+      channelInfo = `${esc(assoc.channel_name || `#${channelId}`)}`;
+    } else if (channelTags.trim()) {
+      channelInfo = `${esc(t('models.tags'))}: ${esc(channelTags)}`;
+    } else {
+      channelInfo = esc(t('models.scopeGlobal'));
+    }
 
     return `
       <div class="association-item" data-id="${id}">
         <div class="association-header">
           <div class="association-info">
-            <span class="association-channel">${esc(channelName)}</span>
+            <span class="association-channel">${channelInfo}</span>
             <span class="association-match-type">${esc(getMatchTypeText(assoc.match_type))}</span>
             <span class="association-priority">P${esc(assoc.priority ?? 0)}</span>
             <span class="association-status ${enabled ? 'enabled' : 'disabled'}">
@@ -228,6 +238,29 @@ function renderPreviewResult(data) {
       ${data?.message ? `<div class="preview-message">${esc(data.message)}</div>` : ''}
     </div>
   `;
+}
+
+function updateScopeFields() {
+  const scope = document.getElementById('associationScope')?.value || 'channel';
+  const channelGroup = document.getElementById('channelSelectGroup');
+  const tagsGroup = document.getElementById('channelTagsGroup');
+  const channelSelect = document.getElementById('associationChannelId');
+
+  if (!channelGroup || !tagsGroup || !channelSelect) return;
+
+  if (scope === 'channel') {
+    channelGroup.style.display = 'block';
+    tagsGroup.style.display = 'none';
+    channelSelect.required = true;
+  } else if (scope === 'tags') {
+    channelGroup.style.display = 'none';
+    tagsGroup.style.display = 'block';
+    channelSelect.required = false;
+  } else {
+    channelGroup.style.display = 'none';
+    tagsGroup.style.display = 'none';
+    channelSelect.required = false;
+  }
 }
 
 function populateChannelOptions(selectedChannelId) {
@@ -345,26 +378,47 @@ async function openAssociationsModal(virtualModelId) {
 function openAssociationEditModal(id) {
   const title = document.getElementById('associationEditModalTitle');
   const idInput = document.getElementById('associationId');
+  const scopeInput = document.getElementById('associationScope');
+  const channelIdInput = document.getElementById('associationChannelId');
+  const channelTagsInput = document.getElementById('associationChannelTags');
   const typeInput = document.getElementById('associationMatchType');
   const patternInput = document.getElementById('associationPattern');
   const priorityInput = document.getElementById('associationPriority');
   const enabledInput = document.getElementById('associationEnabled');
 
-  if (!title || !idInput || !typeInput || !patternInput || !priorityInput || !enabledInput) return;
+  if (!title || !idInput || !scopeInput || !channelIdInput || !channelTagsInput ||
+      !typeInput || !patternInput || !priorityInput || !enabledInput) return;
 
   idInput.value = '';
+  scopeInput.value = 'channel';
+  channelIdInput.value = '';
+  channelTagsInput.value = '';
   typeInput.value = 'exact';
   patternInput.value = '';
   priorityInput.value = '100';
   enabledInput.checked = true;
-  populateChannelOptions('');
 
   if (id) {
     const assoc = currentAssociations.find((a) => Number(a.id) === Number(id));
     if (assoc) {
       title.textContent = t('models.editAssociation');
       idInput.value = String(assoc.id || '');
-      populateChannelOptions(assoc.channel_id);
+
+      // Determine scope from channel_id and channel_tags
+      const channelId = Number(assoc.channel_id || 0);
+      const channelTags = assoc.channel_tags || '';
+
+      if (channelId > 0) {
+        scopeInput.value = 'channel';
+        populateChannelOptions(channelId);
+      } else if (channelTags.trim()) {
+        scopeInput.value = 'tags';
+        channelTagsInput.value = channelTags;
+      } else {
+        scopeInput.value = 'global';
+      }
+
+      updateScopeFields();
       typeInput.value = assoc.match_type || 'exact';
       patternInput.value = assoc.pattern || '';
       priorityInput.value = String(assoc.priority ?? 100);
@@ -372,6 +426,8 @@ function openAssociationEditModal(id) {
     }
   } else {
     title.textContent = t('models.addAssociation');
+    populateChannelOptions('');
+    updateScopeFields();
   }
 
   openModal('associationEditModal');
@@ -379,16 +435,29 @@ function openAssociationEditModal(id) {
 
 async function saveAssociation() {
   const id = document.getElementById('associationId')?.value?.trim() || '';
-  const channelId = Number(document.getElementById('associationChannelId')?.value || 0);
+  const scope = document.getElementById('associationScope')?.value || 'channel';
   const matchType = document.getElementById('associationMatchType')?.value || 'exact';
   const pattern = document.getElementById('associationPattern')?.value?.trim() || '';
   const priority = Number(document.getElementById('associationPriority')?.value || 0);
   const enabled = !!document.getElementById('associationEnabled')?.checked;
 
-  if (!channelId) {
-    window.showError?.(t('models.channelRequired'));
-    return;
+  let channelId = 0;
+  let channelTags = '';
+
+  if (scope === 'channel') {
+    channelId = Number(document.getElementById('associationChannelId')?.value || 0);
+    if (!channelId) {
+      window.showError?.(t('models.channelRequired'));
+      return;
+    }
+  } else if (scope === 'tags') {
+    channelTags = document.getElementById('associationChannelTags')?.value?.trim() || '';
+    if (!channelTags) {
+      window.showError?.(t('models.channelTagsRequired'));
+      return;
+    }
   }
+
   if (!pattern) {
     window.showError?.(t('models.patternRequired'));
     return;
@@ -397,6 +466,7 @@ async function saveAssociation() {
   const payload = {
     virtual_model_id: currentVirtualModelId,
     channel_id: channelId,
+    channel_tags: channelTags,
     match_type: matchType,
     pattern,
     priority,

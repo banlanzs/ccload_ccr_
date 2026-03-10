@@ -580,6 +580,14 @@
                 placeholder="0=无限制">
               <span style="color: var(--neutral-500); font-size: 12px;">$</span>
             </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label class="form-label" for="channelTags" style="margin: 0; white-space: nowrap;"
+                data-i18n="channels.tags">标签</label>
+              <input type="text" id="channelTags" class="form-input"
+                style="flex: 1; min-width: 200px;" data-i18n-placeholder="channels.tagsPlaceholder"
+                placeholder="逗号分隔，如: prod,asia">
+              <span style="color: var(--neutral-500); font-size: 12px;" data-i18n="channels.tagsHint">用于标签匹配</span>
+            </div>
             <div style="margin-left: auto; display: flex; gap: 12px;">
               <button type="button" class="btn btn-secondary" onclick="closeModal()"
                 data-i18n="common.cancel">取消</button>

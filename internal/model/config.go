@@ -64,6 +64,9 @@ type Config struct {
 	ConversionTargetFormat string `json:"conversion_target_format,omitempty"` // 目标格式: "openai" | "anthropic" | "gemini"，空表示根据 channel_type 推断
 	EnableConversion       bool   `json:"enable_conversion"`                  // 是否启用新格式转换系统
 
+	// 标签（用于渠道分组和匹配）
+	Tags []string `json:"tags,omitempty"` // 渠道标签列表
+
 	CreatedAt JSONTime `json:"created_at"` // 使用JSONTime确保序列化格式一致（RFC3339）
 	UpdatedAt JSONTime `json:"updated_at"` // 使用JSONTime确保序列化格式一致（RFC3339）
 

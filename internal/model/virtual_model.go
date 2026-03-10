@@ -70,7 +70,8 @@ func (m MatchType) IsValid() bool {
 type ModelAssociation struct {
 	ID             int64     `json:"id"`
 	VirtualModelID int64     `json:"virtual_model_id"` // 虚拟模型ID
-	ChannelID      int64     `json:"channel_id"`       // 渠道ID
+	ChannelID      int64     `json:"channel_id"`       // 渠道ID（0表示全局匹配）
+	ChannelTags    string    `json:"channel_tags"`     // 渠道标签（逗号分隔，用于标签匹配）
 	MatchType      MatchType `json:"match_type"`       // 匹配类型
 	Pattern        string    `json:"pattern"`          // 匹配模式
 	Priority       int       `json:"priority"`         // 优先级（数值越大优先级越高）
@@ -79,14 +80,38 @@ type ModelAssociation struct {
 	UpdatedAt      JSONTime  `json:"updated_at"`
 }
 
+// IsGlobalMatch 判断是否为全局匹配
+func (m *ModelAssociation) IsGlobalMatch() bool {
+	return m.ChannelID == 0 && m.ChannelTags == ""
+}
+
+// IsChannelTagsMatch 判断是否为标签匹配
+func (m *ModelAssociation) IsChannelTagsMatch() bool {
+	return m.ChannelTags != ""
+}
+
+// IsChannelMatch 判断是否为渠道内匹配
+func (m *ModelAssociation) IsChannelMatch() bool {
+	return m.ChannelID > 0 && m.ChannelTags == ""
+}
+
 // Validate 验证模型关联规则
 func (m *ModelAssociation) Validate() error {
 	if m.VirtualModelID <= 0 {
 		return errors.New("virtual_model_id must be positive")
 	}
-	if m.ChannelID <= 0 {
-		return errors.New("channel_id must be positive")
+
+	// 验证关联类型：channel_id 和 channel_tags 不能同时为空
+	if m.ChannelID == 0 && m.ChannelTags == "" {
+		// 全局匹配：允许
+	} else if m.ChannelID > 0 && m.ChannelTags == "" {
+		// 渠道内匹配：允许
+	} else if m.ChannelID == 0 && m.ChannelTags != "" {
+		// 标签匹配：允许
+	} else {
+		return errors.New("channel_id and channel_tags cannot both be set")
 	}
+
 	if !m.MatchType.IsValid() {
 		return errors.New("invalid match_type")
 	}
@@ -110,4 +135,33 @@ type ModelAssociationWithDetails struct {
 	ModelAssociation
 	VirtualModelName string `json:"virtual_model_name,omitempty"` // 虚拟模型名称
 	ChannelName      string `json:"channel_name,omitempty"`       // 渠道名称
+}
+
+// ParseTags 解析逗号分隔的标签字符串
+func ParseTags(tagsStr string) []string {
+	tagsStr = strings.TrimSpace(tagsStr)
+	if tagsStr == "" {
+		return []string{}
+	}
+	parts := strings.Split(tagsStr, ",")
+	tags := make([]string, 0, len(parts))
+	for _, tag := range parts {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+// FormatTags 格式化标签列表为逗号分隔字符串
+func FormatTags(tags []string) string {
+	filtered := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			filtered = append(filtered, tag)
+		}
+	}
+	return strings.Join(filtered, ",")
 }

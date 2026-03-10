@@ -109,6 +109,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	var c model.Config
 	var enabledInt, enableCCRInt, enableConversionInt int
 	var createdAtRaw, updatedAtRaw any // 使用any接受任意类型（兼容字符串、整数或RFC3339）
+	var tagsStr string
 
 	// 扫描key_count字段（从JOIN查询获取）
 	// 注意：不再包含 models 和 model_redirects 字段
@@ -117,6 +118,7 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 		&c.CooldownUntil, &c.CooldownDurationMs, &c.DailyCostLimit,
 		&enableCCRInt, &c.CCRTransformer,
 		&enableConversionInt, &c.ConversionSourceFormat, &c.ConversionTargetFormat,
+		&tagsStr,
 		&c.KeyCount,
 		&createdAtRaw, &updatedAtRaw); err != nil {
 		return nil, err
@@ -125,6 +127,9 @@ func (cs *ConfigScanner) ScanConfig(scanner interface {
 	c.Enabled = enabledInt != 0
 	c.EnableCCR = enableCCRInt != 0
 	c.EnableConversion = enableConversionInt != 0
+
+	// 解析tags字段
+	c.Tags = model.ParseTags(tagsStr)
 
 	// 转换时间戳（支持不同数据库）
 	now := time.Now()

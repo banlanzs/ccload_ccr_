@@ -23,6 +23,7 @@ func (s *SQLStore) ListConfigs(ctx context.Context) ([]*model.Config, error) {
 			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit,
 			       c.enable_ccr, c.ccr_transformer,
 			       c.enable_conversion, c.conversion_source_format, c.conversion_target_format,
+			       c.tags,
 			       COUNT(k.id) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -60,6 +61,7 @@ func (s *SQLStore) GetConfig(ctx context.Context, id int64) (*model.Config, erro
 			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit,
 			       c.enable_ccr, c.ccr_transformer,
 			       c.enable_conversion, c.conversion_source_format, c.conversion_target_format,
+			       c.tags,
 			       COUNT(k.id) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -102,6 +104,7 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit,
 	                   c.enable_ccr, c.ccr_transformer,
 	                   c.enable_conversion, c.conversion_source_format, c.conversion_target_format,
+	                   c.tags,
 	                   COUNT(k.id) as key_count,
 	                   c.created_at, c.updated_at
 	            FROM channels c
@@ -120,6 +123,7 @@ func (s *SQLStore) GetEnabledChannelsByModel(ctx context.Context, modelName stri
 	                   c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit,
 	                   c.enable_ccr, c.ccr_transformer,
 	                   c.enable_conversion, c.conversion_source_format, c.conversion_target_format,
+	                   c.tags,
 	                   COUNT(k.id) as key_count,
 	                   c.created_at, c.updated_at
 	            FROM channels c
@@ -164,6 +168,7 @@ func (s *SQLStore) GetEnabledChannelsByType(ctx context.Context, channelType str
 			       c.cooldown_until, c.cooldown_duration_ms, c.daily_cost_limit,
 			       c.enable_ccr, c.ccr_transformer,
 			       c.enable_conversion, c.conversion_source_format, c.conversion_target_format,
+			       c.tags,
 			       COUNT(k.id) as key_count,
 			       c.created_at, c.updated_at
 			FROM channels c
@@ -202,6 +207,9 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 	// 使用GetChannelType确保默认值
 	channelType := c.GetChannelType()
 
+	// 格式化tags为逗号分隔字符串
+	tagsStr := model.FormatTags(c.Tags)
+
 	id := c.ID
 	err := s.WithTransaction(ctx, func(tx *sql.Tx) error {
 		if id == 0 {
@@ -210,12 +218,14 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 				INSERT INTO channels(name, url, priority, channel_type, enabled, daily_cost_limit,
 				                    enable_ccr, ccr_transformer,
 				                    enable_conversion, conversion_source_format, conversion_target_format,
+				                    tags,
 				                    created_at, updated_at)
-				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`, c.Name, c.URL, c.Priority, channelType,
 				boolToInt(c.Enabled), c.DailyCostLimit,
 				boolToInt(c.EnableCCR), c.CCRTransformer,
 				boolToInt(c.EnableConversion), c.ConversionSourceFormat, c.ConversionTargetFormat,
+				tagsStr,
 				nowUnix, nowUnix)
 			if err != nil {
 				return err
@@ -232,12 +242,14 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 					INSERT INTO channels(id, name, url, priority, channel_type, enabled, daily_cost_limit,
 					                    enable_ccr, ccr_transformer,
 					                    enable_conversion, conversion_source_format, conversion_target_format,
+					                    tags,
 					                    created_at, updated_at)
-					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				`, id, c.Name, c.URL, c.Priority, channelType,
 					boolToInt(c.Enabled), c.DailyCostLimit,
 					boolToInt(c.EnableCCR), c.CCRTransformer,
 					boolToInt(c.EnableConversion), c.ConversionSourceFormat, c.ConversionTargetFormat,
+					tagsStr,
 					nowUnix, nowUnix)
 				if err != nil {
 					return err
@@ -247,8 +259,9 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 					INSERT INTO channels(id, name, url, priority, channel_type, enabled, daily_cost_limit,
 					                    enable_ccr, ccr_transformer,
 					                    enable_conversion, conversion_source_format, conversion_target_format,
+					                    tags,
 					                    created_at, updated_at)
-					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					ON DUPLICATE KEY UPDATE
 						name = VALUES(name),
 						url = VALUES(url),
@@ -261,11 +274,13 @@ func (s *SQLStore) CreateConfig(ctx context.Context, c *model.Config) (*model.Co
 						enable_conversion = VALUES(enable_conversion),
 						conversion_source_format = VALUES(conversion_source_format),
 						conversion_target_format = VALUES(conversion_target_format),
+						tags = VALUES(tags),
 						updated_at = VALUES(updated_at)
 				`, id, c.Name, c.URL, c.Priority, channelType,
 					boolToInt(c.Enabled), c.DailyCostLimit,
 					boolToInt(c.EnableCCR), c.CCRTransformer,
 					boolToInt(c.EnableConversion), c.ConversionSourceFormat, c.ConversionTargetFormat,
+					tagsStr,
 					nowUnix, nowUnix)
 				if err != nil {
 					return err
@@ -311,6 +326,9 @@ func (s *SQLStore) UpdateConfig(ctx context.Context, id int64, upd *model.Config
 	channelType := upd.GetChannelType()
 	updatedAtUnix := timeToUnix(time.Now())
 
+	// 格式化tags为逗号分隔字符串
+	tagsStr := model.FormatTags(upd.Tags)
+
 	err := s.WithTransaction(ctx, func(tx *sql.Tx) error {
 		// 更新渠道记录
 		_, err := tx.ExecContext(ctx, `
@@ -319,6 +337,7 @@ func (s *SQLStore) UpdateConfig(ctx context.Context, id int64, upd *model.Config
 			    daily_cost_limit=?,
 			    enable_ccr=?, ccr_transformer=?,
 			    enable_conversion=?, conversion_source_format=?, conversion_target_format=?,
+			    tags=?,
 			    updated_at=?
 			WHERE id=?
 		`, name, url, upd.Priority, channelType,
@@ -326,6 +345,7 @@ func (s *SQLStore) UpdateConfig(ctx context.Context, id int64, upd *model.Config
 			upd.DailyCostLimit,
 			boolToInt(upd.EnableCCR), upd.CCRTransformer,
 			boolToInt(upd.EnableConversion), upd.ConversionSourceFormat, upd.ConversionTargetFormat,
+			tagsStr,
 			updatedAtUnix, id)
 		if err != nil {
 			return err

@@ -103,8 +103,25 @@
           <input type="hidden" id="associationId" />
 
           <div class="form-group">
+            <label for="associationScope" data-i18n="models.scope">匹配范围</label>
+            <select id="associationScope" class="form-control" required onchange="updateScopeFields()">
+              <option value="channel" data-i18n="models.scopeChannel">渠道内匹配</option>
+              <option value="tags" data-i18n="models.scopeTags">标签匹配</option>
+              <option value="global" data-i18n="models.scopeGlobal">全局匹配</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="channelSelectGroup">
             <label for="associationChannelId" data-i18n="models.channel">渠道</label>
-            <select id="associationChannelId" class="form-control" required></select>
+            <select id="associationChannelId" class="form-control"></select>
+          </div>
+
+          <div class="form-group" id="channelTagsGroup" style="display: none;">
+            <label for="associationChannelTags" data-i18n="models.channelTags">渠道标签</label>
+            <input type="text" id="associationChannelTags" class="form-control"
+              data-i18n-placeholder="models.channelTagsPlaceholder"
+              placeholder="逗号分隔，如: premium,fast" />
+            <small class="form-text" data-i18n="models.channelTagsHelp">匹配包含所有指定标签的渠道</small>
           </div>
 
           <div class="form-group">
