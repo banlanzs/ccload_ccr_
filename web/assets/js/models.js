@@ -19,9 +19,27 @@ function esc(value) {
 function formatDateTime(isoString) {
   if (!isoString) return '-';
   const locale = window.i18n?.getLocale?.() || 'zh-CN';
-  const dt = new Date(isoString);
+  let dt;
+  // 如果是数字，说明是 Unix 时间戳（秒），需要转换为毫秒
+  if (typeof isoString === 'number') {
+    dt = new Date(isoString * 1000);
+  } else if (typeof isoString === 'string' && /^\d+$/.test(isoString)) {
+    // 如果是数字字符串，也作为 Unix 时间戳处理
+    dt = new Date(parseInt(isoString, 10) * 1000);
+  } else {
+    // 否则作为 ISO 字符串或其他格式处理
+    dt = new Date(isoString);
+  }
   if (Number.isNaN(dt.getTime())) return '-';
-  return dt.toLocaleString(locale);
+  return dt.toLocaleString(locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
 }
 
 function openModal(id) {
