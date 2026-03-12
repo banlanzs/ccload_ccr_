@@ -1,6 +1,14 @@
 # ccLoad - Claude Code & Codex & Gemini & OpenAI Compatible API Proxy Service
 
-## [self use]I initially cloned [ccload](https://github.com/caidaoli/ccLoad) to my local machine, then modified some features I wanted to use, such as adding API format conversion functionality from [claude-code-ccr](https://github.com/musistudio/claude-code-router) and [Api-Conversion](https://github.com/chinrain/Api-Conversion). Then I made other minor tweaks and adjustments—it's a hodgepodge. Therefore, you won't see any fork information here, please be aware.
+## [self use]
+
+cloned from [ccload](https://github.com/caidaoli/ccLoad)
+
+参考集成：
+- [ccload](https://github.com/caidaoli/ccLoad)
+- [claude-code-ccr](https://github.com/musistudio/claude-code-router)
+- [Api-Conversion](https://github.com/chinrain/Api-Conversion)
+- [axonhub](https://github.com/looplj/axonhub)
 
 **English | [简体中文](README.md)**
 

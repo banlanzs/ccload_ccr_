@@ -1,7 +1,14 @@
 # ccLoad - Claude Code & Codex & Gemini & OpenAI 兼容 API 代理服务
 
-## [自用]我一开始是clone的[ccload](https://github.com/caidaoli/ccLoad)到本地的，然后改了些自己想用的功能，比如把[claude-code-ccr](https://github.com/musistudio/claude-code-router)和[Api-Conversion](https://github.com/chinrain/Api-Conversion)的api格式转换功能加入，然后其他方面修修补补，简称大杂烩。因此这里不会看到我fork的信息，望周知。
+## [自用]
+cloned from [ccload](https://github.com/caidaoli/ccLoad)
 
+参考集成：
+- [ccload](https://github.com/caidaoli/ccLoad)
+- [claude-code-ccr](https://github.com/musistudio/claude-code-router)
+- [Api-Conversion](https://github.com/chinrain/Api-Conversion)
+- [axonhub](https://github.com/looplj/axonhub)
+- 
 **[English](README_EN.md) | 简体中文**
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8.svg)](https://golang.org)
