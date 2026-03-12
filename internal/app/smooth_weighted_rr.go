@@ -90,11 +90,13 @@ func (rr *SmoothWeightedRR) Select(
 	maxWeight := state.currentWeights[channels[0].ID]
 	selectedIdx := 0
 	for i := 1; i < n; i++ {
-		cw := state.currentWeights[channels[i].ID]                                            //nolint:gosec // G602: i < n = len(channels)
-		if cw > maxWeight || (cw == maxWeight && channels[i].ID < channels[selectedIdx].ID) { //nolint:gosec // G602: 同上
+		cw := state.currentWeights[channels[i].ID] //nolint:gosec // G602: i < n = len(channels)
+		if cw > maxWeight {
 			maxWeight = cw
 			selectedIdx = i
 		}
+		// 权重相同时不做任何操作，保持第一个遇到的最大权重节点
+		// 这样可以避免系统性偏向 ID 较小的渠道
 	}
 
 	// 步骤3: 减去总权重

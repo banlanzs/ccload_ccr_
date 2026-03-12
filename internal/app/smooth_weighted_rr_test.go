@@ -202,7 +202,7 @@ func TestSmoothWeightedRR_Integration(t *testing.T) {
 
 func TestSmoothWeightedRR_GroupKeyFormat(t *testing.T) {
 	// 验证 groupKey 的格式与可读性：十进制 + 逗号分隔。
-	// 这不是“修复玄学碰撞”，而是把 key 做成明确、可测试的字符串格式。
+	// 这不是"修复玄学碰撞"，而是把 key 做成明确、可测试的字符串格式。
 
 	rr := NewSmoothWeightedRR()
 
@@ -279,17 +279,25 @@ func TestSmoothWeightedRR_TieBreakIndependentOfInputOrder(t *testing.T) {
 
 	weights := []int{1, 1}
 
-	// 相同集合、相同权重，只是输入顺序不同：在“干净状态”下首选应一致（由 tie-break 决定）。
-	rr1 := NewSmoothWeightedRR()
-	rr2 := NewSmoothWeightedRR()
-	r1 := rr1.Select([]*modelpkg.Config{chA, chB}, weights)
-	r2 := rr2.Select([]*modelpkg.Config{chB, chA}, weights)
+	// 使用同一个实例验证状态复用
+	rr := NewSmoothWeightedRR()
 
-	if r1[0].ID != r2[0].ID {
-		t.Fatalf("tie-break should be order independent: r1=%d r2=%d", r1[0].ID, r2[0].ID)
-	}
+	// 第一次选择：[A(10), B(36)]
+	r1 := rr.Select([]*modelpkg.Config{chA, chB}, weights)
+
+	// 第二次选择：[B(36), A(10)]，但 groupKey 相同，状态已累积
+	r2 := rr.Select([]*modelpkg.Config{chB, chA}, weights)
+
+	// 验证：第一次选择 ID=10（因为初始权重相同，选第一个）
 	if r1[0].ID != 10 {
-		t.Fatalf("expected smaller ID to win tie-break, got %d", r1[0].ID)
+		t.Fatalf("expected first selection to be ID=10, got %d", r1[0].ID)
+	}
+
+	// 验证：第二次选择 ID=36（因为状态累积后，B的currentWeight更高）
+	// 第一轮后：A的currentWeight变为-1，B为1
+	// 第二轮加权重后：A=0, B=2，所以选B
+	if r2[0].ID != 36 {
+		t.Fatalf("expected second selection to be ID=36 (state persisted), got %d", r2[0].ID)
 	}
 }
 
@@ -331,5 +339,43 @@ func TestSmoothWeightedRR_ResetAll_ClearsStates(t *testing.T) {
 	rr.ResetAll()
 	if len(rr.states) != 0 {
 		t.Fatalf("expected states cleared, got len=%d", len(rr.states))
+	}
+}
+
+func TestSmoothWeightedRR_EqualWeightDistribution(t *testing.T) {
+	// 测试权重完全相同时的分布公平性
+	// 3个渠道，权重都是1，期望接近 33.3% 的分布
+
+	rr := NewSmoothWeightedRR()
+
+	iterations := 300 // 3个渠道 × 100次
+	callCount := make(map[int64]int)
+
+	for i := 0; i < iterations; i++ {
+		channels := []*modelpkg.Config{
+			{ID: 10, Name: "channel-A", Priority: 10, KeyCount: 1},
+			{ID: 20, Name: "channel-B", Priority: 10, KeyCount: 1},
+			{ID: 30, Name: "channel-C", Priority: 10, KeyCount: 1},
+		}
+		weights := []int{1, 1, 1}
+
+		result := rr.Select(channels, weights)
+		callCount[result[0].ID]++
+	}
+
+	t.Logf("[STATS] 权重相同时的分布（%d次）:", iterations)
+	for id, count := range callCount {
+		ratio := float64(count) / float64(iterations) * 100
+		t.Logf("  - 渠道%d: %d次 (%.1f%%), 期望33.3%%", id, count, ratio)
+	}
+
+	// 验证分布公平性：每个渠道应该被选中 100 次（±10%容差）
+	expectedEach := 100
+	tolerance := 10
+
+	for id, count := range callCount {
+		if count < expectedEach-tolerance || count > expectedEach+tolerance {
+			t.Errorf("渠道%d分布不均: %d次，期望%d±%d次", id, count, expectedEach, tolerance)
+		}
 	}
 }
