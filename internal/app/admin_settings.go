@@ -91,7 +91,8 @@ func (s *Server) AdminUpdateSetting(c *gin.Context) {
 
 	// 某些设置不需要重启，直接更新缓存并返回成功
 	noRestartKeys := map[string]bool{
-		"enable_virtual_models": true,
+		"enable_virtual_models":      true,
+		"log_channel_click_action":   true, // 前端读取，无需重启
 	}
 
 	if noRestartKeys[key] {
@@ -140,8 +141,25 @@ func (s *Server) AdminResetSetting(c *gin.Context) {
 		return
 	}
 
-	// log.Printf("[INFO] Setting reset to default: %s = %s (restart required)", key, setting.DefaultValue)
+	// 某些设置不需要重启，直接更新缓存并返回成功
+	noRestartKeys := map[string]bool{
+		"enable_virtual_models":    true,
+		"log_channel_click_action": true, // 前端读取，无需重启
+	}
 
+	if noRestartKeys[key] {
+		// 手动更新内存缓存
+		s.configService.ReloadSettings(c.Request.Context())
+
+		RespondJSON(c, http.StatusOK, gin.H{
+			"message": "已重置为默认值",
+			"key":     key,
+			"value":   setting.DefaultValue,
+		})
+		return
+	}
+
+	// 返回成功响应，告知需要重启
 	RespondJSON(c, http.StatusOK, gin.H{
 		"message": "配置已重置为默认值，程序将在2秒后重启",
 		"key":     key,
@@ -187,8 +205,32 @@ func (s *Server) AdminBatchUpdateSettings(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[INFO] Batch updated %d settings (restart required)", len(req))
+	log.Printf("[INFO] Batch updated %d settings", len(req))
 
+	// 检查是否所有配置都不需要重启
+	noRestartKeys := map[string]bool{
+		"enable_virtual_models":    true,
+		"log_channel_click_action": true,
+	}
+
+	allNoRestart := true
+	for key := range req {
+		if !noRestartKeys[key] {
+			allNoRestart = false
+			break
+		}
+	}
+
+	if allNoRestart {
+		// 所有配置都不需要重启，直接更新缓存
+		s.configService.ReloadSettings(c.Request.Context())
+		RespondJSON(c, http.StatusOK, gin.H{
+			"message": fmt.Sprintf("已保存 %d 项配置", len(req)),
+		})
+		return
+	}
+
+	// 有需要重启的配置
 	RespondJSON(c, http.StatusOK, gin.H{
 		"message": fmt.Sprintf("已保存 %d 项配置，程序将在2秒后重启", len(req)),
 	})
@@ -236,7 +278,14 @@ func validateSettingValue(key, valueType, value string) error {
 		}
 
 	case "string":
-		// 字符串无需额外验证
+		// 字符串类型的特定验证
+		switch key {
+		case "log_channel_click_action":
+			if value != "edit" && value != "navigate" {
+				return fmt.Errorf("log_channel_click_action must be 'edit' or 'navigate'")
+			}
+		}
+		// 其他字符串无需额外验证
 
 	default:
 		return fmt.Errorf("unknown value type: %s", valueType)

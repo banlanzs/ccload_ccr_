@@ -359,6 +359,7 @@ func TestInitDefaultSettings_SQLite(t *testing.T) {
 		"model_fuzzy_match",
 		"channel_test_content",
 		"channel_stats_range",
+		"log_channel_click_action",
 		"enable_health_score",
 		"success_rate_penalty_weight",
 		"health_score_window_minutes",

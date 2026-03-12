@@ -152,7 +152,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await loadChannels(initialType);
   await loadChannelStats();
-  highlightFromHash();
+
+  // 处理 highlight 参数（从日志页面跳转过来）
+  const highlightId = new URLSearchParams(location.search).get('highlight');
+  if (highlightId) {
+    // 等待渲染完成后高亮
+    setTimeout(() => {
+      const el = document.getElementById(`channel-${highlightId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const prev = el.style.boxShadow;
+        el.style.transition = 'box-shadow 0.3s ease, background 0.3s ease';
+        el.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.35), 0 10px 25px rgba(59,130,246,0.20)';
+        el.style.background = 'rgba(59,130,246,0.06)';
+        setTimeout(() => {
+          el.style.boxShadow = prev || '';
+          el.style.background = '';
+        }, 1600);
+      }
+    }, 300);
+  } else {
+    highlightFromHash();
+  }
+
   window.addEventListener('hashchange', highlightFromHash);
 
   // 监听语言切换事件，重新渲染渠道列表

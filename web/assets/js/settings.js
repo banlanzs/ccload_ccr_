@@ -141,6 +141,18 @@ function renderInput(setting) {
   const safeValue = escapeHtml(setting.value);
   const baseStyle = 'padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg-secondary); color: var(--color-text); font-size: 13px;';
 
+  // 特殊处理：log_channel_click_action 使用 radio 按钮
+  if (setting.key === 'log_channel_click_action') {
+    const isEdit = setting.value === 'edit';
+    return `
+      <label style="margin-right: 16px; cursor: pointer;">
+        <input type="radio" name="${safeKey}" value="edit" ${isEdit ? 'checked' : ''}> ${t('settings.option.log_channel_click_action.edit')}
+      </label>
+      <label style="cursor: pointer;">
+        <input type="radio" name="${safeKey}" value="navigate" ${!isEdit ? 'checked' : ''}> ${t('settings.option.log_channel_click_action.navigate')}
+      </label>`;
+  }
+
   switch (setting.value_type) {
     case 'bool':
       const isTrue = setting.value === 'true' || setting.value === '1';
@@ -223,11 +235,13 @@ async function saveAllSettings() {
 
   // 使用批量更新接口（单次请求，事务保护）
   try {
+    console.log('[设置] 准备保存的配置:', updates);
     await fetchDataWithAuth('/admin/settings/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
+    console.log('[设置] 保存成功');
     let msg = t('settings.msg.savedCount', { count: Object.keys(updates).length });
     if (needsRestartKeys.length > 0) {
       msg += `\n\n${t('settings.msg.restartRequired')}:\n${needsRestartKeys.join(', ')}`;

@@ -7,6 +7,7 @@ let totalLogs = 0;
 let currentChannelType = 'all'; // 当前选中的渠道类型
 let authTokens = []; // 令牌列表
 let logsDefaultTestContent = 'sonnet 4.0的发布日期是什么'; // 默认测试内容（从设置加载）
+let logChannelClickAction = 'edit'; // 渠道点击行为（从设置加载：edit=编辑弹窗, navigate=跳转渠道页）
 
 const ACTIVE_REQUESTS_POLL_INTERVAL_MS = 2000;
 let activeRequestsPollTimer = null;
@@ -116,6 +117,21 @@ async function loadDefaultTestContent() {
     }
   } catch (e) {
     console.warn('加载默认测试内容失败，使用内置默认值', e);
+  }
+}
+
+// 加载渠道点击行为配置（从系统设置）
+async function loadChannelClickAction() {
+  try {
+    const setting = await fetchDataWithAuth('/admin/settings/log_channel_click_action');
+    if (setting && setting.value) {
+      logChannelClickAction = setting.value;
+      console.log('[日志] 渠道点击行为配置已加载:', logChannelClickAction);
+    } else {
+      console.warn('[日志] 渠道点击行为配置为空，使用默认值 edit');
+    }
+  } catch (e) {
+    console.warn('[日志] 加载渠道点击行为配置失败，使用默认值 edit:', e);
   }
 }
 
@@ -909,7 +925,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       currentLogsPage = 1;
       load();
     }),
-    loadDefaultTestContent()
+    loadDefaultTestContent(),
+    loadChannelClickAction()
   ]);
 
   await initFilters(restoredFilters);
@@ -948,12 +965,34 @@ document.addEventListener('DOMContentLoaded', async function () {
   // 事件委托：处理日志表格中的按钮点击
   const tbody = document.getElementById('tbody');
   if (tbody) {
-    tbody.addEventListener('click', (e) => {
+    tbody.addEventListener('click', async (e) => {
       const channelBtn = e.target.closest('.channel-link[data-channel-id]');
       if (channelBtn) {
         const channelId = parseInt(channelBtn.dataset.channelId, 10);
-        if (Number.isFinite(channelId) && channelId > 0 && typeof openLogChannelEditor === 'function') {
-          openLogChannelEditor(channelId);
+        if (Number.isFinite(channelId) && channelId > 0) {
+          // 每次点击时重新读取最新配置
+          let clickAction = logChannelClickAction; // 使用缓存的默认值
+          try {
+            const setting = await fetchDataWithAuth('/admin/settings/log_channel_click_action');
+            if (setting && setting.value) {
+              clickAction = setting.value;
+            }
+          } catch (e) {
+            console.warn('[日志] 读取渠道点击行为配置失败，使用缓存值:', clickAction);
+          }
+
+          console.log('[日志] 点击渠道，ID:', channelId, '行为配置:', clickAction);
+          if (clickAction === 'navigate') {
+            // 跳转到渠道管理页面并定位到该渠道
+            console.log('[日志] 跳转到渠道管理页面');
+            window.location.href = `/web/channels.html?highlight=${channelId}`;
+          } else {
+            // 默认：打开编辑弹窗
+            console.log('[日志] 打开编辑弹窗');
+            if (typeof openLogChannelEditor === 'function') {
+              openLogChannelEditor(channelId);
+            }
+          }
         }
         return;
       }
