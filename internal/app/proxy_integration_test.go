@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -259,35 +261,131 @@ func TestProxy_ChannelRetry_On503(t *testing.T) {
 	}
 }
 
-func TestProxy_MultiURLFallback_DoesNotChannelCooldownEarly(t *testing.T) {
+func TestProxy_MultiURL5xx_SwitchesToNextChannel(t *testing.T) {
 	t.Parallel()
 
-	failCalls := 0
-	okCalls := 0
+	var ch1FailCalls atomic.Int64
+	var ch1SecondURLCalls atomic.Int64
+	var ch2Calls atomic.Int64
 
-	// URL1: 固定失败（模拟单URL故障）
+	// 渠道1 URL1: 固定 503
 	upstreamFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		failCalls++
+		ch1FailCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"service unavailable"}`))
 	}))
 	defer upstreamFail.Close()
 
-	// URL2: 正常返回
-	upstreamOK := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		okCalls++
+	// 渠道1 URL2: 即使可用也不应被尝试（新策略：5xx 直接切渠道）
+	upstreamShouldSkip := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ch1SecondURLCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"from-url2","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+		_, _ = w.Write([]byte(`{"id":"from-ch1-url2","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstreamShouldSkip.Close()
+
+	// 渠道2: 正常返回，用于验证“切换到下一个渠道”
+	upstreamCh2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ch2Calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"from-ch2","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstreamCh2.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "ch-multi-url", models: "gpt-4", apiKey: "sk-1", priority: 100},
+		{name: "ch-fallback", models: "gpt-4", apiKey: "sk-2", priority: 50},
+	}, map[int]string{
+		0: upstreamFail.URL + "\n" + upstreamShouldSkip.URL,
+		1: upstreamCh2.URL,
+	})
+
+	ctx := context.Background()
+	configs, err := env.store.ListConfigs(ctx)
+	if err != nil {
+		t.Fatalf("ListConfigs: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("expected 2 config, got %d", len(configs))
+	}
+
+	var channelID int64
+	for _, cfg := range configs {
+		if cfg.Name == "ch-multi-url" {
+			channelID = cfg.ID
+			break
+		}
+	}
+	if channelID == 0 {
+		t.Fatalf("ch-multi-url not found in configs")
+	}
+
+	// 强制渠道1首跳命中失败URL，避免随机首跳影响稳定性
+	env.server.urlSelector.CooldownURL(channelID, upstreamShouldSkip.URL)
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":    "gpt-4",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	}, nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "from-ch2") {
+		t.Fatalf("expected switch to next channel, got body: %s", w.Body.String())
+	}
+	ch1Fail := ch1FailCalls.Load()
+	ch1Second := ch1SecondURLCalls.Load()
+	ch2 := ch2Calls.Load()
+	if ch1Fail < 1 {
+		t.Fatalf("expected channel1 first URL attempted, got %d", ch1Fail)
+	}
+	if ch1Second != 0 {
+		t.Fatalf("expected channel1 second URL not attempted on 5xx, got %d", ch1Second)
+	}
+	if ch2 < 1 {
+		t.Fatalf("expected next channel attempted, got %d", ch2)
+	}
+}
+
+func TestProxy_MultiURLFallbackOn598_DoesNotChannelCooldownEarly(t *testing.T) {
+	t.Parallel()
+
+	var failCalls atomic.Int64
+	var okCalls atomic.Int64
+
+	// URL1: 首字节超时（598）
+	upstreamTimeout := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		failCalls.Add(1)
+		time.Sleep(120 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer upstreamTimeout.Close()
+
+	// URL2: 正常返回
+	upstreamOK := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		okCalls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"from-url2\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer upstreamOK.Close()
 
 	env := setupProxyTestEnv(t, []testChannel{
 		{name: "ch-multi-url", models: "gpt-4", apiKey: "sk-1"},
 	}, map[int]string{
-		0: upstreamFail.URL + "\n" + upstreamOK.URL,
+		0: upstreamTimeout.URL + "\n" + upstreamOK.URL,
 	})
+
+	// 缩短首字节超时，稳定触发 598
+	env.server.firstByteTimeout = 50 * time.Millisecond
 
 	ctx := context.Background()
 	configs, err := env.store.ListConfigs(ctx)
@@ -299,11 +397,12 @@ func TestProxy_MultiURLFallback_DoesNotChannelCooldownEarly(t *testing.T) {
 	}
 	channelID := configs[0].ID
 
-	// 强制 URL2 进入冷却，确保首跳先打到失败URL，稳定覆盖“先失败再回退”的路径
+	// 强制 URL2 进入冷却，确保首跳先打到 timeout URL
 	env.server.urlSelector.CooldownURL(channelID, upstreamOK.URL)
 
 	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
 		"model":    "gpt-4",
+		"stream":   true,
 		"messages": []map[string]string{{"role": "user", "content": "hi"}},
 	}, nil)
 
@@ -311,13 +410,15 @@ func TestProxy_MultiURLFallback_DoesNotChannelCooldownEarly(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "from-url2") {
-		t.Fatalf("expected fallback to url2, got body: %s", w.Body.String())
+		t.Fatalf("expected fallback to url2 on 598, got body: %s", w.Body.String())
 	}
-	if failCalls < 1 || okCalls < 1 {
-		t.Fatalf("expected both URLs attempted, failCalls=%d okCalls=%d", failCalls, okCalls)
+	fail := failCalls.Load()
+	ok := okCalls.Load()
+	if fail < 1 || ok < 1 {
+		t.Fatalf("expected both URLs attempted, failCalls=%d okCalls=%d", fail, ok)
 	}
 
-	// 关键断言：多URL内部回退成功后，不应残留渠道级冷却
+	// 关键断言：598 触发多URL内部回退成功后，不应残留渠道级冷却
 	cooldowns, err := env.store.GetAllChannelCooldowns(ctx)
 	if err != nil {
 		t.Fatalf("GetAllChannelCooldowns: %v", err)
@@ -330,11 +431,11 @@ func TestProxy_MultiURLFallback_DoesNotChannelCooldownEarly(t *testing.T) {
 func TestProxy_MultiURLFirstAttempt_UsesWeightedRandom(t *testing.T) {
 	t.Parallel()
 
-	fastCalls := 0
-	slowCalls := 0
+	var fastCalls atomic.Int64
+	var slowCalls atomic.Int64
 
 	upstreamFast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fastCalls++
+		fastCalls.Add(1)
 		time.Sleep(5 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -343,7 +444,7 @@ func TestProxy_MultiURLFirstAttempt_UsesWeightedRandom(t *testing.T) {
 	defer upstreamFast.Close()
 
 	upstreamSlow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slowCalls++
+		slowCalls.Add(1)
 		time.Sleep(30 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -382,11 +483,94 @@ func TestProxy_MultiURLFirstAttempt_UsesWeightedRandom(t *testing.T) {
 		}
 	}
 
-	if fastCalls <= slowCalls {
-		t.Fatalf("expected weighted random to prefer fast URL, fast=%d slow=%d", fastCalls, slowCalls)
+	fast := fastCalls.Load()
+	slow := slowCalls.Load()
+	if fast <= slow {
+		t.Fatalf("expected weighted random to prefer fast URL, fast=%d slow=%d", fast, slow)
 	}
-	if slowCalls < 5 {
-		t.Fatalf("expected slow URL to be selected sometimes (not deterministic first pick), fast=%d slow=%d", fastCalls, slowCalls)
+	if slow < 5 {
+		t.Fatalf("expected slow URL to be selected sometimes (not deterministic first pick), fast=%d slow=%d", fast, slow)
+	}
+}
+
+func TestProxy_MultiURLProbeCanceledByShutdown_DoesNotPolluteCooldown(t *testing.T) {
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"from-a","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstreamA.Close()
+
+	upstreamB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"from-b","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+	}))
+	defer upstreamB.Close()
+
+	env := setupProxyTestEnv(t, []testChannel{
+		{name: "ch-probe-shutdown", models: "gpt-4", apiKey: "sk-1"},
+	}, map[int]string{
+		0: upstreamA.URL + "\n" + upstreamB.URL,
+	})
+
+	env.server.urlSelector.probeTimeout = 5 * time.Second
+	started := make(chan struct{}, 2)
+	env.server.urlSelector.probeDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	w := doProxyRequest(t, env.engine, http.MethodPost, "/v1/chat/completions", map[string]any{
+		"model":    "gpt-4",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	}, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("probe dial did not start in time")
+		}
+	}
+
+	configs, err := env.store.ListConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListConfigs: %v", err)
+	}
+	if len(configs) != 1 {
+		t.Fatalf("expected 1 config, got %d", len(configs))
+	}
+	channelID := configs[0].ID
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := env.server.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		env.server.urlSelector.mu.RLock()
+		probingLeft := len(env.server.urlSelector.probing)
+		env.server.urlSelector.mu.RUnlock()
+		if probingLeft == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected probing markers to be cleared after shutdown, got %d", probingLeft)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	for _, u := range []string{upstreamA.URL, upstreamB.URL} {
+		if env.server.urlSelector.IsCooledDown(channelID, u) {
+			t.Fatalf("expected canceled probe not to cooldown url: %s", u)
+		}
 	}
 }
 
