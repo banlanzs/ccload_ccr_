@@ -630,6 +630,11 @@
         window.initTopbar(options.topbarKey);
       }
 
+      // 初始化返回顶部按钮
+      if (options.backToTop !== false && typeof window.initBackToTop === 'function') {
+        window.initBackToTop(options.backToTop);
+      }
+
       await run();
     };
 
@@ -1272,4 +1277,68 @@
   window.initChannelTypeFilter = initChannelTypeFilter;
   window.loadAuthTokensIntoSelect = loadAuthTokensIntoSelect;
   window.initTimeRangeSelector = initTimeRangeSelector;
+})();
+
+// ============================================================
+// 返回顶部按钮（全局功能）
+// ============================================================
+(function () {
+  /**
+   * 创建并初始化返回顶部按钮
+   * @param {Object} options - 配置选项
+   * @param {number} [options.threshold=300] - 显示按钮的滚动阈值（像素）
+   * @param {number} [options.scrollTop=0] - 点击后滚动到的位置（像素）
+   */
+  function initBackToTop(options = {}) {
+    const threshold = typeof options.threshold === 'number' ? options.threshold : 300;
+    const scrollTop = typeof options.scrollTop === 'number' ? options.scrollTop : 0;
+
+    // 避免重复创建
+    if (document.getElementById('back-to-top-btn')) return;
+
+    // 创建按钮元素
+    const btn = document.createElement('button');
+    btn.id = 'back-to-top-btn';
+    btn.className = 'back-to-top-btn';
+    btn.setAttribute('aria-label', 'Back to top');
+    btn.title = 'Back to top';
+
+    // 添加到页面
+    document.body.appendChild(btn);
+
+    // 滚动事件处理（使用节流优化性能）
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+          if (scrollY > threshold) {
+            btn.classList.add('visible');
+          } else {
+            btn.classList.remove('visible');
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    // 点击事件处理
+    const onClick = () => {
+      window.scrollTo({
+        top: scrollTop,
+        behavior: 'smooth'
+      });
+    };
+
+    // 绑定事件
+    window.addEventListener('scroll', onScroll, { passive: true });
+    btn.addEventListener('click', onClick);
+
+    // 初始检查
+    onScroll();
+  }
+
+  // 导出到全局作用域
+  window.initBackToTop = initBackToTop;
 })();
