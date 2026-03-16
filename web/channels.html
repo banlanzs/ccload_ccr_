@@ -1168,36 +1168,42 @@
       <h3 id="batchEditCommonModelsTitle" data-i18n="channels.batchEditCommonModelsTitle">批量编辑共有模型</h3>
       <button class="modal-close" id="closeBatchEditCommonModelsBtn" type="button">&times;</button>
     </div>
-    <div class="modal-body">
-      <p id="batchEditCommonModelsDesc" style="margin: 0 0 12px; color: var(--neutral-600); font-size: 13px;"></p>
-      <div id="batchEditCommonModelsLoading" style="text-align:center; padding: 24px; color: var(--neutral-500);" data-i18n="common.loading">加载中...</div>
-      <div id="batchEditCommonModelsEmpty" style="display:none; text-align:center; padding: 24px; color: var(--neutral-500);" data-i18n="channels.batchEditNoCommonModels">所选渠道没有共有模型</div>
-      <div id="batchEditOutlierChannels" style="display:none; margin-bottom:12px; padding: 10px 12px; background: var(--warning-50, #fffbeb); border: 1px solid var(--warning-300, #fcd34d); border-radius: var(--radius-md); font-size: 13px;">
-        <div style="font-weight:600; color: var(--warning-700, #b45309); margin-bottom:6px;" data-i18n="channels.batchEditOutlierTitle">以下渠道缺少部分模型，导致共有模型减少：</div>
-        <div id="batchEditOutlierList" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+    <div class="modal-body" style="min-height: 200px;">
+      <!-- 加载中 -->
+      <div id="batchEditCommonModelsLoading" style="text-align:center; padding: 40px; color: var(--neutral-500);" data-i18n="common.loading">加载中...</div>
+
+      <!-- 第一步：模型列表 -->
+      <div id="batchEditStep1" style="display:none;">
+        <p id="batchEditCommonModelsDesc" style="margin: 0 0 10px; color: var(--neutral-600); font-size: 13px;"></p>
+        <div id="batchEditModelList" style="display:flex; flex-direction:column; gap:4px; max-height:420px; overflow-y:auto;"></div>
       </div>
-      <div id="batchEditCommonModelsContent" style="display:none;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:var(--neutral-600); user-select:none;">
-            <input type="checkbox" id="batchEditEnableRedirectEdit" style="width:14px;height:14px;">
-            <span data-i18n="channels.batchEditEnableRedirect">允许编辑重定向目标</span>
-          </label>
-          <span style="font-size:12px; color:var(--neutral-400);" data-i18n="channels.batchEditRedirectHint">（默认锁定，避免误操作）</span>
+
+      <!-- 第二步：编辑单个模型 -->
+      <div id="batchEditStep2" style="display:none;">
+        <button id="batchEditBackBtn" type="button" class="btn btn-secondary btn-sm" style="margin-bottom:12px;">
+          ← <span data-i18n="channels.batchEditBack">返回列表</span>
+        </button>
+        <p id="batchEditStep2Desc" style="margin: 0 0 12px; color: var(--neutral-600); font-size: 13px;"></p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label" style="font-size:13px;" data-i18n="channels.batchEditColRequestModel">请求模型名（可修改）</label>
+          <input type="text" id="batchEditNewModel" class="form-input" style="font-size:13px;">
         </div>
-        <table class="inline-table" style="width:100%;">
-          <thead>
-            <tr>
-              <th style="width:46%;" data-i18n="channels.batchEditColRequestModel">请求模型名（可修改）</th>
-              <th style="width:46%;" data-i18n="channels.redirectTarget">重定向目标（可选）</th>
-              <th style="width:8%;"></th>
-            </tr>
-          </thead>
-          <tbody id="batchEditCommonModelsTableBody"></tbody>
-        </table>
+        <div class="form-group" style="margin-bottom:4px;">
+          <label class="form-label" style="font-size:13px; display:flex; align-items:center; gap:8px;">
+            <span data-i18n="channels.redirectTarget">重定向目标（可选）</span>
+            <label style="display:flex; align-items:center; gap:5px; font-weight:400; cursor:pointer;">
+              <input type="checkbox" id="batchEditEnableRedirectEdit" style="width:13px;height:13px;">
+              <span style="font-size:12px; color:var(--neutral-500);" data-i18n="channels.batchEditEnableRedirect">允许编辑</span>
+            </label>
+          </label>
+          <input type="text" id="batchEditRedirectModel" class="form-input" style="font-size:13px;" disabled>
+          <small style="color:var(--neutral-400); font-size:12px;" data-i18n="channels.batchEditRedirectHint">（默认锁定，避免误操作）</small>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
-      <button id="saveBatchEditCommonModelsBtn" class="btn btn-primary" type="button" data-i18n="common.save">保存</button>
+      <!-- 第一步无操作按钮，第二步显示保存 -->
+      <button id="saveBatchEditCommonModelsBtn" class="btn btn-primary" type="button" style="display:none;" data-i18n="common.save">保存</button>
       <button id="cancelBatchEditCommonModelsBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">取消</button>
     </div>
   </div>

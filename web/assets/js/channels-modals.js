@@ -1724,10 +1724,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ==================== 批量编辑共有模型 ====================
 
-// 当前批量编辑的模型数据：[{ model, new_model, redirect_model }]
-let batchEditCommonModelsData = [];
-// 重定向列是否允许编辑（默认锁定）
-let batchEditRedirectEnabled = false;
+// 所有模型列表（并集，按渠道数排序）
+let batchEditAllModels = [];
+// 当前选中编辑的模型原始名
+let batchEditCurrentModel = null;
+// 总渠道数
+let batchEditTotalChannels = 0;
 
 async function openBatchEditCommonModels() {
   const channelIDs = getSelectedChannelIDs();
@@ -1736,24 +1738,18 @@ async function openBatchEditCommonModels() {
     return;
   }
 
-  // 重置开关状态
-  batchEditRedirectEnabled = false;
-
-  // 显示模态框，进入加载状态
   const modal = document.getElementById('batchEditCommonModelsModal');
   const loading = document.getElementById('batchEditCommonModelsLoading');
-  const empty = document.getElementById('batchEditCommonModelsEmpty');
-  const content = document.getElementById('batchEditCommonModelsContent');
-  const desc = document.getElementById('batchEditCommonModelsDesc');
-  const toggle = document.getElementById('batchEditEnableRedirectEdit');
-  const outlierBox = document.getElementById('batchEditOutlierChannels');
-  const outlierList = document.getElementById('batchEditOutlierList');
-  if (toggle) toggle.checked = false;
+  const step1 = document.getElementById('batchEditStep1');
+  const step2 = document.getElementById('batchEditStep2');
+  const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
 
+  // 重置到第一步
   loading.style.display = '';
-  empty.style.display = 'none';
-  content.style.display = 'none';
-  if (outlierBox) outlierBox.style.display = 'none';
+  step1.style.display = 'none';
+  step2.style.display = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
+  batchEditCurrentModel = null;
   modal.classList.add('show');
 
   try {
@@ -1765,176 +1761,193 @@ async function openBatchEditCommonModels() {
     if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
 
     const data = resp.data || {};
-    const models = data.models || [];
-    const channelCount = data.channel_count || channelIDs.length;
-    const outliers = data.outlier_channels || [];
+    batchEditAllModels = data.models || [];
+    batchEditTotalChannels = data.channel_count || channelIDs.length;
 
     loading.style.display = 'none';
-
-    // 渲染异常渠道提示
-    if (outlierBox && outlierList && outliers.length > 0) {
-      outlierList.innerHTML = '';
-      outliers.forEach(ch => {
-        const tag = document.createElement('span');
-        tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; padding: 2px 8px; background: var(--warning-100, #fef3c7); border: 1px solid var(--warning-300, #fcd34d); border-radius: 999px; font-size: 12px; color: var(--warning-800, #92400e); cursor:pointer;';
-        tag.title = window.t('channels.batchEditOutlierClickHint') || '点击跳转到该渠道';
-        tag.textContent = `#${ch.id} ${ch.name}`;
-        // 点击跳转：关闭模态框并在搜索框中定位该渠道
-        tag.addEventListener('click', () => {
-          closeBatchEditCommonModels();
-          const idFilter = document.getElementById('idFilter');
-          if (idFilter) {
-            idFilter.value = String(ch.id);
-            idFilter.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        });
-        outlierList.appendChild(tag);
-      });
-      outlierBox.style.display = '';
-    }
-
-    if (desc) {
-      desc.textContent = window.t('channels.batchEditCommonModelsDesc', {
-        count: channelCount,
-        modelCount: models.length
-      });
-    }
-
-    if (models.length === 0) {
-      empty.style.display = '';
-      return;
-    }
-
-    // 保存数据并渲染表格
-    batchEditCommonModelsData = models.map(m => ({
-      model: m.model,
-      new_model: '',  // 空表示不改名，保持原名
-      redirect_model: m.redirect_model === m.model ? '' : m.redirect_model
-    }));
-
-    renderBatchEditCommonModelsTable();
-    content.style.display = '';
+    renderBatchEditStep1();
+    step1.style.display = '';
   } catch (e) {
     loading.style.display = 'none';
-    empty.style.display = '';
-    empty.textContent = window.t('channels.batchOperationFailed', { error: e.message });
+    loading.style.display = '';
+    loading.textContent = window.t('channels.batchOperationFailed', { error: e.message });
     console.error('batch-common-models fetch failed', e);
   }
 }
 
-function renderBatchEditCommonModelsTable() {
-  const tbody = document.getElementById('batchEditCommonModelsTableBody');
-  if (!tbody) return;
+function renderBatchEditStep1() {
+  const desc = document.getElementById('batchEditCommonModelsDesc');
+  const list = document.getElementById('batchEditModelList');
+  if (!list) return;
 
-  tbody.innerHTML = '';
-  batchEditCommonModelsData.forEach((entry, index) => {
-    const tr = document.createElement('tr');
-
-    // 请求模型名（始终可编辑）
-    const tdModel = document.createElement('td');
-    tdModel.style.cssText = 'padding: 4px 8px;';
-    const modelInput = document.createElement('input');
-    modelInput.type = 'text';
-    modelInput.className = 'form-input';
-    modelInput.style.cssText = 'width: 100%; font-size: 13px; padding: 4px 8px;';
-    modelInput.value = entry.new_model || entry.model;
-    modelInput.dataset.index = index;
-    modelInput.addEventListener('input', (e) => {
-      batchEditCommonModelsData[index].new_model = e.target.value.trim();
-      // 同步更新重定向输入框的 placeholder
-      const redirectInput = tbody.querySelector(`.batch-redirect-input[data-index="${index}"]`);
-      if (redirectInput) {
-        redirectInput.placeholder = e.target.value.trim() || entry.model;
-      }
+  if (desc) {
+    desc.textContent = window.t('channels.batchEditStep1Desc', {
+      count: batchEditTotalChannels,
+      modelCount: batchEditAllModels.length
     });
-    tdModel.appendChild(modelInput);
-    tr.appendChild(tdModel);
+  }
 
-    // 重定向目标（受开关控制）
-    const tdRedirect = document.createElement('td');
-    tdRedirect.style.cssText = 'padding: 4px 8px;';
+  list.innerHTML = '';
 
-    const displayVal = entry.redirect_model || entry.new_model || entry.model;
+  if (batchEditAllModels.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'text-align:center; padding:32px; color:var(--neutral-400); font-size:13px;';
+    empty.textContent = window.t('channels.batchEditNoCommonModels');
+    list.appendChild(empty);
+    return;
+  }
 
-    if (batchEditRedirectEnabled) {
-      // 开关打开：可编辑输入框
-      const redirectInput = document.createElement('input');
-      redirectInput.type = 'text';
-      redirectInput.className = 'form-input batch-redirect-input';
-      redirectInput.style.cssText = 'width: 100%; font-size: 13px; padding: 4px 8px;';
-      redirectInput.value = entry.redirect_model || '';
-      redirectInput.placeholder = entry.new_model || entry.model;
-      redirectInput.dataset.index = index;
-      redirectInput.addEventListener('input', (e) => {
-        batchEditCommonModelsData[index].redirect_model = e.target.value.trim();
-      });
-      tdRedirect.appendChild(redirectInput);
-    } else {
-      // 开关关闭：只读文本
-      const span = document.createElement('span');
-      span.className = 'batch-redirect-input';
-      span.dataset.index = index;
-      span.style.cssText = 'display:block; padding: 4px 8px; font-size: 13px; color: var(--neutral-500); background: var(--neutral-50); border: 1px solid var(--neutral-200); border-radius: var(--radius-md); min-height: 30px; line-height: 22px;';
-      span.textContent = displayVal;
-      tdRedirect.appendChild(span);
+  batchEditAllModels.forEach(m => {
+    const row = document.createElement('div');
+    const isAll = m.channel_count === batchEditTotalChannels;
+    row.style.cssText = `display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-radius:var(--radius-md); border:1px solid var(--neutral-200); background:${isAll ? 'var(--success-50,#f0fdf4)' : 'var(--neutral-50)'}; cursor:pointer; transition: background 0.15s;`;
+    row.addEventListener('mouseenter', () => { row.style.background = isAll ? 'var(--success-100,#dcfce7)' : 'var(--neutral-100)'; });
+    row.addEventListener('mouseleave', () => { row.style.background = isAll ? 'var(--success-50,#f0fdf4)' : 'var(--neutral-50)'; });
+
+    // 左侧：模型名 + 重定向
+    const left = document.createElement('div');
+    left.style.cssText = 'display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;';
+
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'font-size:13px; font-weight:600; color:var(--neutral-800); word-break:break-all;';
+    nameSpan.textContent = m.model;
+    nameRow.appendChild(nameSpan);
+
+    // 重定向标记
+    if (m.redirect_model && m.redirect_model !== m.model) {
+      const arrow = document.createElement('span');
+      arrow.style.cssText = 'font-size:11px; color:var(--neutral-400); white-space:nowrap; flex-shrink:0;';
+      arrow.textContent = `→ ${m.redirect_model}`;
+      nameRow.appendChild(arrow);
     }
-    tr.appendChild(tdRedirect);
+    left.appendChild(nameRow);
 
-    // 清除按钮（仅开关打开时显示）
-    const tdAction = document.createElement('td');
-    tdAction.style.cssText = 'padding: 4px 8px; text-align: center;';
-    if (batchEditRedirectEnabled) {
-      const clearBtn = document.createElement('button');
-      clearBtn.type = 'button';
-      clearBtn.className = 'btn btn-sm';
-      clearBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; color: var(--neutral-500);';
-      clearBtn.title = window.t('channels.clearRedirect') || '清除重定向';
-      clearBtn.textContent = '✕';
-      clearBtn.addEventListener('click', () => {
-        batchEditCommonModelsData[index].redirect_model = '';
-        const inp = tbody.querySelector(`.batch-redirect-input[data-index="${index}"]`);
-        if (inp && inp.tagName === 'INPUT') inp.value = '';
-      });
-      tdAction.appendChild(clearBtn);
-    }
-    tr.appendChild(tdAction);
+    // 右侧：覆盖率徽章 + 编辑按钮
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:12px;';
 
-    tbody.appendChild(tr);
+    const badge = document.createElement('span');
+    const pct = Math.round(m.coverage * 100);
+    badge.style.cssText = `font-size:12px; padding:2px 8px; border-radius:999px; font-weight:600; white-space:nowrap; background:${isAll ? 'var(--success-100,#dcfce7)' : 'var(--neutral-200)'}; color:${isAll ? 'var(--success-700,#15803d)' : 'var(--neutral-600)'};`;
+    badge.textContent = `${m.channel_count}/${batchEditTotalChannels} (${pct}%)`;
+    right.appendChild(badge);
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'btn btn-sm btn-secondary';
+    editBtn.style.cssText = 'font-size:12px; padding:3px 10px; flex-shrink:0;';
+    editBtn.textContent = window.t('common.edit') || '编辑';
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openBatchEditStep2(m);
+    });
+    right.appendChild(editBtn);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    row.addEventListener('click', () => openBatchEditStep2(m));
+    list.appendChild(row);
   });
+}
+
+function openBatchEditStep2(modelEntry) {
+  batchEditCurrentModel = modelEntry.model;
+
+  const step1 = document.getElementById('batchEditStep1');
+  const step2 = document.getElementById('batchEditStep2');
+  const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
+  const desc = document.getElementById('batchEditStep2Desc');
+  const newModelInput = document.getElementById('batchEditNewModel');
+  const redirectInput = document.getElementById('batchEditRedirectModel');
+  const redirectToggle = document.getElementById('batchEditEnableRedirectEdit');
+
+  step1.style.display = 'none';
+  step2.style.display = '';
+  if (saveBtn) saveBtn.style.display = '';
+
+  // 重置重定向开关
+  if (redirectToggle) redirectToggle.checked = false;
+  if (redirectInput) {
+    redirectInput.disabled = true;
+    redirectInput.style.opacity = '0.5';
+  }
+
+  if (desc) {
+    const isAll = modelEntry.channel_count === batchEditTotalChannels;
+    desc.textContent = window.t('channels.batchEditStep2Desc', {
+      model: modelEntry.model,
+      count: modelEntry.channel_count,
+      total: batchEditTotalChannels
+    }) + (isAll ? '' : ` ⚠️ ${window.t('channels.batchEditStep2NotAll')}`);
+  }
+
+  if (newModelInput) newModelInput.value = modelEntry.model;
+  if (redirectInput) {
+    const redirect = (modelEntry.redirect_model && modelEntry.redirect_model !== modelEntry.model)
+      ? modelEntry.redirect_model : '';
+    redirectInput.value = redirect;
+    redirectInput.placeholder = modelEntry.model;
+  }
 }
 
 function closeBatchEditCommonModels() {
   const modal = document.getElementById('batchEditCommonModelsModal');
   if (modal) modal.classList.remove('show');
-  batchEditCommonModelsData = [];
-  batchEditRedirectEnabled = false;
+  batchEditAllModels = [];
+  batchEditCurrentModel = null;
+  batchEditTotalChannels = 0;
 }
 
 async function saveBatchEditCommonModels() {
+  if (!batchEditCurrentModel) return;
   const channelIDs = getSelectedChannelIDs();
-  if (channelIDs.length === 0 || batchEditCommonModelsData.length === 0) return;
+  if (channelIDs.length === 0) return;
 
+  const newModelInput = document.getElementById('batchEditNewModel');
+  const redirectInput = document.getElementById('batchEditRedirectModel');
   const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
+
+  const newModel = (newModelInput?.value || '').trim();
+  const redirectModel = (redirectInput?.value || '').trim();
+
+  if (!newModel) {
+    if (window.showWarning) window.showWarning(window.t('channels.enterModelName'));
+    return;
+  }
+
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = window.t('common.saving') || '保存中...'; }
 
   try {
-    const edits = batchEditCommonModelsData.map(entry => ({
-      model: entry.model,
-      new_model: entry.new_model || '',
-      redirect_model: entry.redirect_model || ''
-    }));
-
     const resp = await fetchAPIWithAuth('/admin/channels/batch-edit-models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_ids: channelIDs, edits })
+      body: JSON.stringify({
+        channel_ids: channelIDs,
+        edits: [{ model: batchEditCurrentModel, new_model: newModel, redirect_model: redirectModel }]
+      })
     });
     if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
 
     const data = resp.data || {};
-    closeBatchEditCommonModels();
+
+    // 更新本地列表中该模型的数据，返回第一步
+    const idx = batchEditAllModels.findIndex(m => m.model === batchEditCurrentModel);
+    if (idx >= 0) {
+      batchEditAllModels[idx].model = newModel;
+      batchEditAllModels[idx].redirect_model = redirectModel || newModel;
+    }
+    batchEditCurrentModel = null;
+
+    // 返回第一步并刷新列表
+    document.getElementById('batchEditStep2').style.display = 'none';
+    document.getElementById('batchEditStep1').style.display = '';
+    if (saveBtn) saveBtn.style.display = 'none';
+    renderBatchEditStep1();
+
     clearChannelsCache();
-    await loadChannels(filters.channelType);
+    loadChannels(filters.channelType);
 
     if (window.showSuccess) {
       window.showSuccess(window.t('channels.batchEditModelsSaved', {
@@ -1955,16 +1968,27 @@ document.addEventListener('DOMContentLoaded', function () {
   const closeBtn = document.getElementById('closeBatchEditCommonModelsBtn');
   const cancelBtn = document.getElementById('cancelBatchEditCommonModelsBtn');
   const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
+  const backBtn = document.getElementById('batchEditBackBtn');
   const redirectToggle = document.getElementById('batchEditEnableRedirectEdit');
+  const redirectInput = document.getElementById('batchEditRedirectModel');
 
   if (closeBtn) closeBtn.addEventListener('click', closeBatchEditCommonModels);
   if (cancelBtn) cancelBtn.addEventListener('click', closeBatchEditCommonModels);
   if (saveBtn) saveBtn.addEventListener('click', saveBatchEditCommonModels);
 
-  if (redirectToggle) {
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      batchEditCurrentModel = null;
+      document.getElementById('batchEditStep2').style.display = 'none';
+      document.getElementById('batchEditStep1').style.display = '';
+      if (saveBtn) saveBtn.style.display = 'none';
+    });
+  }
+
+  if (redirectToggle && redirectInput) {
     redirectToggle.addEventListener('change', function () {
-      batchEditRedirectEnabled = this.checked;
-      renderBatchEditCommonModelsTable();
+      redirectInput.disabled = !this.checked;
+      redirectInput.style.opacity = this.checked ? '1' : '0.5';
     });
   }
 });

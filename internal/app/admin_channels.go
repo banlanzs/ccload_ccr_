@@ -907,7 +907,7 @@ func normalizeBatchChannelIDs(rawIDs []int64) []int64 {
 	return ids
 }
 
-// HandleGetBatchCommonModels 获取多个渠道的共有模型列表
+// HandleGetBatchCommonModels 获取多个渠道的模型列表（按渠道覆盖数排序）
 // POST /admin/channels/batch-common-models
 func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
 	var req struct {
@@ -926,91 +926,62 @@ func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// 收集每个渠道的模型集合，取交集
 	type modelInfo struct {
-		Model         string `json:"model"`
-		RedirectModel string `json:"redirect_model"`
-		ChannelCount  int    `json:"channel_count"`
+		Model         string  `json:"model"`
+		RedirectModel string  `json:"redirect_model"`  // 取第一个出现该模型的渠道的值
+		ChannelCount  int     `json:"channel_count"`   // 拥有该模型的渠道数
+		Coverage      float64 `json:"coverage"`        // 覆盖率 = channel_count / total
 	}
 
-	// outlierChannel 记录导致交集缩减的渠道
-	type outlierChannel struct {
-		ID   int64  `json:"id"`
-		Name string `json:"name"`
-	}
+	total := len(channelIDs)
+	// key: 小写模型名 -> modelInfo
+	modelMap := make(map[string]*modelInfo)
+	// 保留首次出现顺序
+	modelOrder := make([]string, 0)
 
-	// 第一个渠道的模型作为候选集
-	firstCfg, err := s.store.GetConfig(ctx, channelIDs[0])
-	if err != nil {
-		RespondErrorMsg(c, http.StatusNotFound, fmt.Sprintf("channel %d not found", channelIDs[0]))
-		return
-	}
-
-	// 初始化候选集（key: 小写模型名 -> modelInfo）
-	candidates := make(map[string]*modelInfo, len(firstCfg.ModelEntries))
-	for _, e := range firstCfg.ModelEntries {
-		redirect := e.RedirectModel
-		if redirect == "" {
-			redirect = e.Model
-		}
-		candidates[strings.ToLower(e.Model)] = &modelInfo{
-			Model:         e.Model,
-			RedirectModel: redirect,
-			ChannelCount:  1,
-		}
-	}
-
-	// outliers: 至少缺少一个候选模型的渠道（用 map 去重）
-	outlierMap := make(map[int64]string) // id -> name
-
-	// 与其余渠道取交集，同时记录异常渠道
-	for _, channelID := range channelIDs[1:] {
+	for _, channelID := range channelIDs {
 		cfg, err := s.store.GetConfig(ctx, channelID)
 		if err != nil {
-			outlierMap[channelID] = fmt.Sprintf("#%d", channelID)
 			continue
 		}
-
-		channelModels := make(map[string]bool, len(cfg.ModelEntries))
 		for _, e := range cfg.ModelEntries {
-			channelModels[strings.ToLower(e.Model)] = true
-		}
-
-		missing := false
-		for key, info := range candidates {
-			if channelModels[key] {
+			key := strings.ToLower(e.Model)
+			if info, exists := modelMap[key]; exists {
 				info.ChannelCount++
 			} else {
-				missing = true
-				delete(candidates, key)
+				redirect := e.RedirectModel
+				if redirect == "" {
+					redirect = e.Model
+				}
+				modelMap[key] = &modelInfo{
+					Model:         e.Model,
+					RedirectModel: redirect,
+					ChannelCount:  1,
+				}
+				modelOrder = append(modelOrder, key)
 			}
 		}
-		if missing {
-			outlierMap[channelID] = cfg.Name
-		}
 	}
 
-	// 转换为有序列表（按原始顺序）
-	result := make([]*modelInfo, 0, len(candidates))
-	for _, e := range firstCfg.ModelEntries {
-		key := strings.ToLower(e.Model)
-		if info, ok := candidates[key]; ok {
-			result = append(result, info)
-		}
+	// 计算覆盖率并转为列表
+	result := make([]*modelInfo, 0, len(modelMap))
+	for _, key := range modelOrder {
+		info := modelMap[key]
+		info.Coverage = float64(info.ChannelCount) / float64(total)
+		result = append(result, info)
 	}
 
-	// outliers 按请求中的 channelIDs 顺序排列
-	outliers := make([]outlierChannel, 0, len(outlierMap))
-	for _, id := range channelIDs[1:] {
-		if name, ok := outlierMap[id]; ok {
-			outliers = append(outliers, outlierChannel{ID: id, Name: name})
+	// 按渠道数降序排序，相同时按模型名升序
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ChannelCount != result[j].ChannelCount {
+			return result[i].ChannelCount > result[j].ChannelCount
 		}
-	}
+		return result[i].Model < result[j].Model
+	})
 
 	RespondJSON(c, http.StatusOK, gin.H{
-		"models":           result,
-		"channel_count":    len(channelIDs),
-		"outlier_channels": outliers,
+		"models":        result,
+		"channel_count": total,
 	})
 }
 
