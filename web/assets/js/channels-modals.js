@@ -1746,11 +1746,14 @@ async function openBatchEditCommonModels() {
   const content = document.getElementById('batchEditCommonModelsContent');
   const desc = document.getElementById('batchEditCommonModelsDesc');
   const toggle = document.getElementById('batchEditEnableRedirectEdit');
+  const outlierBox = document.getElementById('batchEditOutlierChannels');
+  const outlierList = document.getElementById('batchEditOutlierList');
   if (toggle) toggle.checked = false;
 
   loading.style.display = '';
   empty.style.display = 'none';
   content.style.display = 'none';
+  if (outlierBox) outlierBox.style.display = 'none';
   modal.classList.add('show');
 
   try {
@@ -1764,8 +1767,31 @@ async function openBatchEditCommonModels() {
     const data = resp.data || {};
     const models = data.models || [];
     const channelCount = data.channel_count || channelIDs.length;
+    const outliers = data.outlier_channels || [];
 
     loading.style.display = 'none';
+
+    // 渲染异常渠道提示
+    if (outlierBox && outlierList && outliers.length > 0) {
+      outlierList.innerHTML = '';
+      outliers.forEach(ch => {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex; align-items:center; gap:4px; padding: 2px 8px; background: var(--warning-100, #fef3c7); border: 1px solid var(--warning-300, #fcd34d); border-radius: 999px; font-size: 12px; color: var(--warning-800, #92400e); cursor:pointer;';
+        tag.title = window.t('channels.batchEditOutlierClickHint') || '点击跳转到该渠道';
+        tag.textContent = `#${ch.id} ${ch.name}`;
+        // 点击跳转：关闭模态框并在搜索框中定位该渠道
+        tag.addEventListener('click', () => {
+          closeBatchEditCommonModels();
+          const idFilter = document.getElementById('idFilter');
+          if (idFilter) {
+            idFilter.value = String(ch.id);
+            idFilter.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        });
+        outlierList.appendChild(tag);
+      });
+      outlierBox.style.display = '';
+    }
 
     if (desc) {
       desc.textContent = window.t('channels.batchEditCommonModelsDesc', {

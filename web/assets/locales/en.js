@@ -1034,6 +1034,8 @@ window.I18N_LOCALES['en'] = {
   'channels.clearRedirect': 'Clear redirect',
   'channels.batchEditEnableRedirect': 'Allow editing redirect target',
   'channels.batchEditRedirectHint': '(locked by default to prevent mistakes)',
+  'channels.batchEditOutlierTitle': 'These channels are missing some models, reducing the common set:',
+  'channels.batchEditOutlierClickHint': 'Click to filter by this channel ID',
   'channels.unsavedChanges': 'You have unsaved changes. Are you sure you want to close?',
   'channels.confirmDeleteKey': 'Are you sure you want to delete Key #{index}?',
   'channels.keepOneKey': 'At least one API Key is required',

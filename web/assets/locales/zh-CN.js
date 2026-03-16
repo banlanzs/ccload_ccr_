@@ -1064,6 +1064,8 @@ window.I18N_LOCALES['zh-CN'] = {
   'channels.clearRedirect': '清除重定向',
   'channels.batchEditEnableRedirect': '允许编辑重定向目标',
   'channels.batchEditRedirectHint': '（默认锁定，避免误操作）',
+  'channels.batchEditOutlierTitle': '以下渠道缺少部分模型，导致共有模型减少：',
+  'channels.batchEditOutlierClickHint': '点击以ID筛选该渠道',
   'channels.unsavedChanges': '有未保存的更改，确定要关闭吗？',
   'channels.confirmDeleteKey': '确定要删除第 {index} 个Key吗？',
   'channels.keepOneKey': '至少需要保留一个API Key',

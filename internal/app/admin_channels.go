@@ -927,11 +927,16 @@ func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 收集每个渠道的模型集合，取交集
-	// modelMap: model名称 -> 各渠道的redirect_model（取第一个渠道的值作为默认）
 	type modelInfo struct {
 		Model         string `json:"model"`
 		RedirectModel string `json:"redirect_model"`
-		ChannelCount  int    `json:"channel_count"` // 拥有该模型的渠道数
+		ChannelCount  int    `json:"channel_count"`
+	}
+
+	// outlierChannel 记录导致交集缩减的渠道
+	type outlierChannel struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
 	}
 
 	// 第一个渠道的模型作为候选集
@@ -955,27 +960,33 @@ func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
 		}
 	}
 
-	// 与其余渠道取交集
+	// outliers: 至少缺少一个候选模型的渠道（用 map 去重）
+	outlierMap := make(map[int64]string) // id -> name
+
+	// 与其余渠道取交集，同时记录异常渠道
 	for _, channelID := range channelIDs[1:] {
 		cfg, err := s.store.GetConfig(ctx, channelID)
 		if err != nil {
-			// 渠道不存在时跳过（不影响其他渠道）
+			outlierMap[channelID] = fmt.Sprintf("#%d", channelID)
 			continue
 		}
 
-		// 构建该渠道的模型集合
 		channelModels := make(map[string]bool, len(cfg.ModelEntries))
 		for _, e := range cfg.ModelEntries {
 			channelModels[strings.ToLower(e.Model)] = true
 		}
 
-		// 从候选集中移除该渠道没有的模型
+		missing := false
 		for key, info := range candidates {
 			if channelModels[key] {
 				info.ChannelCount++
 			} else {
+				missing = true
 				delete(candidates, key)
 			}
+		}
+		if missing {
+			outlierMap[channelID] = cfg.Name
 		}
 	}
 
@@ -988,9 +999,18 @@ func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
 		}
 	}
 
+	// outliers 按请求中的 channelIDs 顺序排列
+	outliers := make([]outlierChannel, 0, len(outlierMap))
+	for _, id := range channelIDs[1:] {
+		if name, ok := outlierMap[id]; ok {
+			outliers = append(outliers, outlierChannel{ID: id, Name: name})
+		}
+	}
+
 	RespondJSON(c, http.StatusOK, gin.H{
-		"models":        result,
-		"channel_count": len(channelIDs),
+		"models":           result,
+		"channel_count":    len(channelIDs),
+		"outlier_channels": outliers,
 	})
 }
 
