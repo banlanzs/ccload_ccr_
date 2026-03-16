@@ -66,6 +66,7 @@ function initChannelsPageActions() {
         'batch-disable-channels': () => batchDisableSelectedChannels(),
         'batch-refresh-channels-merge': () => batchRefreshSelectedChannelsMerge(),
         'batch-refresh-channels-replace': () => batchRefreshSelectedChannelsReplace(),
+        'batch-edit-common-models': () => openBatchEditCommonModels(),
         'clear-selected-channels': () => clearSelectedChannels(),
         'close-test-modal': () => closeTestModal(),
         'run-channel-test': () => runChannelTest(),

@@ -196,6 +196,17 @@
                 </span>
                 <span data-i18n="channels.batchRefreshReplace">模型覆盖刷新</span>
               </button>
+              <button id="batchEditCommonModelsBtn" type="button"
+                class="btn btn-sm channel-batch-action channel-batch-action--edit"
+                data-action="batch-edit-common-models" disabled>
+                <span class="channel-batch-action__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 14.5V17h2.5l7.4-7.4-2.5-2.5L3 14.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                    <path d="M14.5 3.5l2 2-1.4 1.4-2-2 1.4-1.4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span data-i18n="channels.batchEditCommonModels">编辑共有模型</span>
+              </button>
             </div>
             <button id="batchFloatingMenuCloseBtn" type="button" class="channel-batch-close"
               data-action="clear-selected-channels" data-i18n-title="common.close" title="关闭" disabled>
@@ -1149,6 +1160,44 @@
   <template id="tpl-batch-fail-item">
     <li class="batch-fail-item"><strong>Key #{{keyNum}}</strong> ({{keyMask}}): {{error}}</li>
   </template>
+
+<!-- 批量编辑共有模型模态框 -->
+<div id="batchEditCommonModelsModal" class="modal">
+  <div class="modal-content" style="max-width: 680px;">
+    <div class="modal-header">
+      <h3 id="batchEditCommonModelsTitle" data-i18n="channels.batchEditCommonModelsTitle">批量编辑共有模型</h3>
+      <button class="modal-close" id="closeBatchEditCommonModelsBtn" type="button">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="batchEditCommonModelsDesc" style="margin: 0 0 12px; color: var(--neutral-600); font-size: 13px;"></p>
+      <div id="batchEditCommonModelsLoading" style="text-align:center; padding: 24px; color: var(--neutral-500);" data-i18n="common.loading">加载中...</div>
+      <div id="batchEditCommonModelsEmpty" style="display:none; text-align:center; padding: 24px; color: var(--neutral-500);" data-i18n="channels.batchEditNoCommonModels">所选渠道没有共有模型</div>
+      <div id="batchEditCommonModelsContent" style="display:none;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:var(--neutral-600); user-select:none;">
+            <input type="checkbox" id="batchEditEnableRedirectEdit" style="width:14px;height:14px;">
+            <span data-i18n="channels.batchEditEnableRedirect">允许编辑重定向目标</span>
+          </label>
+          <span style="font-size:12px; color:var(--neutral-400);" data-i18n="channels.batchEditRedirectHint">（默认锁定，避免误操作）</span>
+        </div>
+        <table class="inline-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th style="width:46%;" data-i18n="channels.batchEditColRequestModel">请求模型名（可修改）</th>
+              <th style="width:46%;" data-i18n="channels.redirectTarget">重定向目标（可选）</th>
+              <th style="width:8%;"></th>
+            </tr>
+          </thead>
+          <tbody id="batchEditCommonModelsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="saveBatchEditCommonModelsBtn" class="btn btn-primary" type="button" data-i18n="common.save">保存</button>
+      <button id="cancelBatchEditCommonModelsBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">取消</button>
+    </div>
+  </div>
+</div>
 
 </body>
 

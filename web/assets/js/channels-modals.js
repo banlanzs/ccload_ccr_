@@ -539,6 +539,7 @@ function updateBatchChannelSelectionUI() {
     'batchDisableChannelsBtn',
     'batchRefreshMergeBtn',
     'batchRefreshReplaceBtn',
+    'batchEditCommonModelsBtn',
     'batchDeleteChannelsBtn'
   ];
   actionBtnIDs.forEach((id) => {
@@ -1717,6 +1718,227 @@ document.addEventListener('DOMContentLoaded', function() {
           ccrTransformerGroup.style.display = 'none';
         }
       }
+    });
+  }
+});
+
+// ==================== 批量编辑共有模型 ====================
+
+// 当前批量编辑的模型数据：[{ model, new_model, redirect_model }]
+let batchEditCommonModelsData = [];
+// 重定向列是否允许编辑（默认锁定）
+let batchEditRedirectEnabled = false;
+
+async function openBatchEditCommonModels() {
+  const channelIDs = getSelectedChannelIDs();
+  if (channelIDs.length === 0) {
+    if (window.showWarning) window.showWarning(window.t('channels.batchNoSelection'));
+    return;
+  }
+
+  // 重置开关状态
+  batchEditRedirectEnabled = false;
+
+  // 显示模态框，进入加载状态
+  const modal = document.getElementById('batchEditCommonModelsModal');
+  const loading = document.getElementById('batchEditCommonModelsLoading');
+  const empty = document.getElementById('batchEditCommonModelsEmpty');
+  const content = document.getElementById('batchEditCommonModelsContent');
+  const desc = document.getElementById('batchEditCommonModelsDesc');
+  const toggle = document.getElementById('batchEditEnableRedirectEdit');
+  if (toggle) toggle.checked = false;
+
+  loading.style.display = '';
+  empty.style.display = 'none';
+  content.style.display = 'none';
+  modal.classList.add('show');
+
+  try {
+    const resp = await fetchAPIWithAuth('/admin/channels/batch-common-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_ids: channelIDs })
+    });
+    if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+
+    const data = resp.data || {};
+    const models = data.models || [];
+    const channelCount = data.channel_count || channelIDs.length;
+
+    loading.style.display = 'none';
+
+    if (desc) {
+      desc.textContent = window.t('channels.batchEditCommonModelsDesc', {
+        count: channelCount,
+        modelCount: models.length
+      });
+    }
+
+    if (models.length === 0) {
+      empty.style.display = '';
+      return;
+    }
+
+    // 保存数据并渲染表格
+    batchEditCommonModelsData = models.map(m => ({
+      model: m.model,
+      new_model: '',  // 空表示不改名，保持原名
+      redirect_model: m.redirect_model === m.model ? '' : m.redirect_model
+    }));
+
+    renderBatchEditCommonModelsTable();
+    content.style.display = '';
+  } catch (e) {
+    loading.style.display = 'none';
+    empty.style.display = '';
+    empty.textContent = window.t('channels.batchOperationFailed', { error: e.message });
+    console.error('batch-common-models fetch failed', e);
+  }
+}
+
+function renderBatchEditCommonModelsTable() {
+  const tbody = document.getElementById('batchEditCommonModelsTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  batchEditCommonModelsData.forEach((entry, index) => {
+    const tr = document.createElement('tr');
+
+    // 请求模型名（始终可编辑）
+    const tdModel = document.createElement('td');
+    tdModel.style.cssText = 'padding: 4px 8px;';
+    const modelInput = document.createElement('input');
+    modelInput.type = 'text';
+    modelInput.className = 'form-input';
+    modelInput.style.cssText = 'width: 100%; font-size: 13px; padding: 4px 8px;';
+    modelInput.value = entry.new_model || entry.model;
+    modelInput.dataset.index = index;
+    modelInput.addEventListener('input', (e) => {
+      batchEditCommonModelsData[index].new_model = e.target.value.trim();
+      // 同步更新重定向输入框的 placeholder
+      const redirectInput = tbody.querySelector(`.batch-redirect-input[data-index="${index}"]`);
+      if (redirectInput) {
+        redirectInput.placeholder = e.target.value.trim() || entry.model;
+      }
+    });
+    tdModel.appendChild(modelInput);
+    tr.appendChild(tdModel);
+
+    // 重定向目标（受开关控制）
+    const tdRedirect = document.createElement('td');
+    tdRedirect.style.cssText = 'padding: 4px 8px;';
+
+    const displayVal = entry.redirect_model || entry.new_model || entry.model;
+
+    if (batchEditRedirectEnabled) {
+      // 开关打开：可编辑输入框
+      const redirectInput = document.createElement('input');
+      redirectInput.type = 'text';
+      redirectInput.className = 'form-input batch-redirect-input';
+      redirectInput.style.cssText = 'width: 100%; font-size: 13px; padding: 4px 8px;';
+      redirectInput.value = entry.redirect_model || '';
+      redirectInput.placeholder = entry.new_model || entry.model;
+      redirectInput.dataset.index = index;
+      redirectInput.addEventListener('input', (e) => {
+        batchEditCommonModelsData[index].redirect_model = e.target.value.trim();
+      });
+      tdRedirect.appendChild(redirectInput);
+    } else {
+      // 开关关闭：只读文本
+      const span = document.createElement('span');
+      span.className = 'batch-redirect-input';
+      span.dataset.index = index;
+      span.style.cssText = 'display:block; padding: 4px 8px; font-size: 13px; color: var(--neutral-500); background: var(--neutral-50); border: 1px solid var(--neutral-200); border-radius: var(--radius-md); min-height: 30px; line-height: 22px;';
+      span.textContent = displayVal;
+      tdRedirect.appendChild(span);
+    }
+    tr.appendChild(tdRedirect);
+
+    // 清除按钮（仅开关打开时显示）
+    const tdAction = document.createElement('td');
+    tdAction.style.cssText = 'padding: 4px 8px; text-align: center;';
+    if (batchEditRedirectEnabled) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'btn btn-sm';
+      clearBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; color: var(--neutral-500);';
+      clearBtn.title = window.t('channels.clearRedirect') || '清除重定向';
+      clearBtn.textContent = '✕';
+      clearBtn.addEventListener('click', () => {
+        batchEditCommonModelsData[index].redirect_model = '';
+        const inp = tbody.querySelector(`.batch-redirect-input[data-index="${index}"]`);
+        if (inp && inp.tagName === 'INPUT') inp.value = '';
+      });
+      tdAction.appendChild(clearBtn);
+    }
+    tr.appendChild(tdAction);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function closeBatchEditCommonModels() {
+  const modal = document.getElementById('batchEditCommonModelsModal');
+  if (modal) modal.classList.remove('show');
+  batchEditCommonModelsData = [];
+  batchEditRedirectEnabled = false;
+}
+
+async function saveBatchEditCommonModels() {
+  const channelIDs = getSelectedChannelIDs();
+  if (channelIDs.length === 0 || batchEditCommonModelsData.length === 0) return;
+
+  const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = window.t('common.saving') || '保存中...'; }
+
+  try {
+    const edits = batchEditCommonModelsData.map(entry => ({
+      model: entry.model,
+      new_model: entry.new_model || '',
+      redirect_model: entry.redirect_model || ''
+    }));
+
+    const resp = await fetchAPIWithAuth('/admin/channels/batch-edit-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_ids: channelIDs, edits })
+    });
+    if (!resp.success) throw new Error(resp.error || window.t('common.failed'));
+
+    const data = resp.data || {};
+    closeBatchEditCommonModels();
+    clearChannelsCache();
+    await loadChannels(filters.channelType);
+
+    if (window.showSuccess) {
+      window.showSuccess(window.t('channels.batchEditModelsSaved', {
+        updated: data.updated || 0,
+        unchanged: data.unchanged || 0
+      }));
+    }
+  } catch (e) {
+    console.error('batch-edit-models save failed', e);
+    if (window.showError) window.showError(window.t('channels.batchOperationFailed', { error: e.message }));
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = window.t('common.save'); }
+  }
+}
+
+// 初始化批量编辑共有模型模态框事件
+document.addEventListener('DOMContentLoaded', function () {
+  const closeBtn = document.getElementById('closeBatchEditCommonModelsBtn');
+  const cancelBtn = document.getElementById('cancelBatchEditCommonModelsBtn');
+  const saveBtn = document.getElementById('saveBatchEditCommonModelsBtn');
+  const redirectToggle = document.getElementById('batchEditEnableRedirectEdit');
+
+  if (closeBtn) closeBtn.addEventListener('click', closeBatchEditCommonModels);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeBatchEditCommonModels);
+  if (saveBtn) saveBtn.addEventListener('click', saveBatchEditCommonModels);
+
+  if (redirectToggle) {
+    redirectToggle.addEventListener('change', function () {
+      batchEditRedirectEnabled = this.checked;
+      renderBatchEditCommonModelsTable();
     });
   }
 });

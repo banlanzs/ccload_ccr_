@@ -906,3 +906,208 @@ func normalizeBatchChannelIDs(rawIDs []int64) []int64 {
 	}
 	return ids
 }
+
+// HandleGetBatchCommonModels 获取多个渠道的共有模型列表
+// POST /admin/channels/batch-common-models
+func (s *Server) HandleGetBatchCommonModels(c *gin.Context) {
+	var req struct {
+		ChannelIDs []int64 `json:"channel_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	channelIDs := normalizeBatchChannelIDs(req.ChannelIDs)
+	if len(channelIDs) == 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "channel_ids cannot be empty")
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// 收集每个渠道的模型集合，取交集
+	// modelMap: model名称 -> 各渠道的redirect_model（取第一个渠道的值作为默认）
+	type modelInfo struct {
+		Model         string `json:"model"`
+		RedirectModel string `json:"redirect_model"`
+		ChannelCount  int    `json:"channel_count"` // 拥有该模型的渠道数
+	}
+
+	// 第一个渠道的模型作为候选集
+	firstCfg, err := s.store.GetConfig(ctx, channelIDs[0])
+	if err != nil {
+		RespondErrorMsg(c, http.StatusNotFound, fmt.Sprintf("channel %d not found", channelIDs[0]))
+		return
+	}
+
+	// 初始化候选集（key: 小写模型名 -> modelInfo）
+	candidates := make(map[string]*modelInfo, len(firstCfg.ModelEntries))
+	for _, e := range firstCfg.ModelEntries {
+		redirect := e.RedirectModel
+		if redirect == "" {
+			redirect = e.Model
+		}
+		candidates[strings.ToLower(e.Model)] = &modelInfo{
+			Model:         e.Model,
+			RedirectModel: redirect,
+			ChannelCount:  1,
+		}
+	}
+
+	// 与其余渠道取交集
+	for _, channelID := range channelIDs[1:] {
+		cfg, err := s.store.GetConfig(ctx, channelID)
+		if err != nil {
+			// 渠道不存在时跳过（不影响其他渠道）
+			continue
+		}
+
+		// 构建该渠道的模型集合
+		channelModels := make(map[string]bool, len(cfg.ModelEntries))
+		for _, e := range cfg.ModelEntries {
+			channelModels[strings.ToLower(e.Model)] = true
+		}
+
+		// 从候选集中移除该渠道没有的模型
+		for key, info := range candidates {
+			if channelModels[key] {
+				info.ChannelCount++
+			} else {
+				delete(candidates, key)
+			}
+		}
+	}
+
+	// 转换为有序列表（按原始顺序）
+	result := make([]*modelInfo, 0, len(candidates))
+	for _, e := range firstCfg.ModelEntries {
+		key := strings.ToLower(e.Model)
+		if info, ok := candidates[key]; ok {
+			result = append(result, info)
+		}
+	}
+
+	RespondJSON(c, http.StatusOK, gin.H{
+		"models":        result,
+		"channel_count": len(channelIDs),
+	})
+}
+
+// BatchModelEdit 批量模型编辑操作
+type BatchModelEdit struct {
+	Model         string `json:"model"`           // 原始模型名称（用于匹配，即用户请求时的名字）
+	NewModel      string `json:"new_model"`       // 新的请求模型名（空表示不改名）
+	RedirectModel string `json:"redirect_model"`  // 新的重定向目标（空表示与new_model/model相同）
+}
+
+// HandleBatchEditModels 批量编辑多个渠道的共有模型（请求名 + 重定向目标）
+// POST /admin/channels/batch-edit-models
+func (s *Server) HandleBatchEditModels(c *gin.Context) {
+	var req struct {
+		ChannelIDs []int64          `json:"channel_ids"`
+		Edits      []BatchModelEdit `json:"edits"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	channelIDs := normalizeBatchChannelIDs(req.ChannelIDs)
+	if len(channelIDs) == 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "channel_ids cannot be empty")
+		return
+	}
+	if len(req.Edits) == 0 {
+		RespondErrorMsg(c, http.StatusBadRequest, "edits cannot be empty")
+		return
+	}
+
+	// 验证并构建编辑映射（key: 小写原始模型名 -> edit）
+	type resolvedEdit struct {
+		newModel      string // 新请求模型名（已trim）
+		redirectModel string // 新重定向目标（已trim）
+	}
+	editMap := make(map[string]resolvedEdit, len(req.Edits))
+	for _, edit := range req.Edits {
+		edit.Model = strings.TrimSpace(edit.Model)
+		edit.NewModel = strings.TrimSpace(edit.NewModel)
+		edit.RedirectModel = strings.TrimSpace(edit.RedirectModel)
+		if edit.Model == "" {
+			RespondErrorMsg(c, http.StatusBadRequest, "model name cannot be empty")
+			return
+		}
+		for _, s := range []string{edit.Model, edit.NewModel, edit.RedirectModel} {
+			if strings.ContainsAny(s, "\x00\r\n") {
+				RespondErrorMsg(c, http.StatusBadRequest, "model name contains illegal characters")
+				return
+			}
+		}
+		// new_model 为空时保持原名不变
+		newModel := edit.NewModel
+		if newModel == "" {
+			newModel = edit.Model
+		}
+		editMap[strings.ToLower(edit.Model)] = resolvedEdit{
+			newModel:      newModel,
+			redirectModel: edit.RedirectModel,
+		}
+	}
+
+	ctx := c.Request.Context()
+	updated := 0
+	unchanged := 0
+	notFound := make([]int64, 0)
+
+	for _, channelID := range channelIDs {
+		cfg, err := s.store.GetConfig(ctx, channelID)
+		if err != nil {
+			notFound = append(notFound, channelID)
+			continue
+		}
+
+		changed := false
+		for i := range cfg.ModelEntries {
+			key := strings.ToLower(cfg.ModelEntries[i].Model)
+			e, ok := editMap[key]
+			if !ok {
+				continue
+			}
+
+			// 计算新的 redirect_model：空表示与请求模型名相同（即不重定向）
+			newRedirect := e.redirectModel
+			if newRedirect == "" {
+				newRedirect = e.newModel
+			}
+
+			if cfg.ModelEntries[i].Model != e.newModel || cfg.ModelEntries[i].RedirectModel != newRedirect {
+				cfg.ModelEntries[i].Model = e.newModel
+				cfg.ModelEntries[i].RedirectModel = newRedirect
+				changed = true
+			}
+		}
+
+		if !changed {
+			unchanged++
+			continue
+		}
+
+		if _, err := s.store.UpdateConfig(ctx, channelID, cfg); err != nil {
+			log.Printf("batch-edit-models: update channel %d failed: %v", channelID, err)
+			notFound = append(notFound, channelID)
+			continue
+		}
+		updated++
+	}
+
+	if updated > 0 {
+		s.InvalidateChannelListCache()
+	}
+
+	RespondJSON(c, http.StatusOK, gin.H{
+		"updated":         updated,
+		"unchanged":       unchanged,
+		"not_found":       notFound,
+		"not_found_count": len(notFound),
+	})
+}
