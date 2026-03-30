@@ -117,6 +117,7 @@ function getLogMobileLabels() {
     model: escapeHtml(t('common.model')),
     status: escapeHtml(t('logs.statusCode')),
     timing: escapeHtml(t('logs.colTiming')),
+    speed: escapeHtml(t('logs.colSpeed')),
     input: escapeHtml(t('logs.colInput')),
     output: escapeHtml(t('logs.colOutput')),
     cacheRead: escapeHtml(t('logs.colCacheRead')),
@@ -124,6 +125,28 @@ function getLogMobileLabels() {
     cost: escapeHtml(t('logs.colCost')),
     message: escapeHtml(t('logs.colMessage'))
   };
+}
+
+function calculateLogSpeed(entry) {
+  const outputTokens = Number(entry?.output_tokens);
+  const duration = Number(entry?.duration);
+  if (!Number.isFinite(outputTokens) || outputTokens <= 0 || !Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+
+  let generationDuration = duration;
+  if (entry?.is_streaming) {
+    const firstByteTime = Number(entry?.first_byte_time);
+    if (Number.isFinite(firstByteTime) && firstByteTime > 0) {
+      generationDuration = duration - firstByteTime;
+    }
+  }
+
+  if (!Number.isFinite(generationDuration) || generationDuration <= 0) {
+    return null;
+  }
+
+  return outputTokens / generationDuration;
 }
 
 // 加载默认测试内容（从系统设置）
@@ -381,6 +404,7 @@ function renderActiveRequests(activeRequests) {
             <td class="logs-col-model" data-mobile-label="${logMobileLabels.model}"><span class="model-tag">${escapeHtml(req.model || '-')}</span></td>
             <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="status-pending">进行中</span></td>
             <td class="logs-col-timing" data-mobile-label="${logMobileLabels.timing}" style="text-align: right; white-space: nowrap;">${durationDisplay} ${streamFlag}</td>
+            <td class="logs-col-speed mobile-empty-cell" data-mobile-label="${logMobileLabels.speed}" style="text-align: right; white-space: nowrap;"></td>
             <td class="logs-col-input mobile-empty-cell" data-mobile-label="${logMobileLabels.input}" style="text-align: right; white-space: nowrap;"></td>
             <td class="logs-col-output mobile-empty-cell" data-mobile-label="${logMobileLabels.output}" style="text-align: right; white-space: nowrap;"></td>
             <td class="logs-col-cache-read mobile-empty-cell" data-mobile-label="${logMobileLabels.cacheRead}" style="text-align: right; white-space: nowrap;"></td>
@@ -401,7 +425,7 @@ function getTableColspan() {
   const table = document.getElementById('tbody')?.closest('table')
     || document.querySelector('.logs-table');
   const headerCells = table ? table.querySelectorAll('thead th') : [];
-  return headerCells.length || 13; // fallback到13列（向后兼容）
+  return headerCells.length || 14; // fallback到14列（日志页默认列数）
 }
 
 function renderLogsLoading() {
@@ -494,6 +518,11 @@ function renderLogs(data) {
       responseTimingDisplay = `<span class="log-timing-pair"><span class="log-timing-duration">${durationDisplay}</span></span>${streamFlag}`;
     }
 
+    const logSpeed = calculateLogSpeed(entry);
+    const speedDisplay = logSpeed === null
+      ? ''
+      : `<span class="token-metric-value" style="color: var(--neutral-700);">${logSpeed.toFixed(1)}</span>`;
+
     // 5. API Key显示(含按钮组)
     let apiKeyDisplay = '';
     if (entry.api_key_used && entry.channel_id && entry.model) {
@@ -573,6 +602,7 @@ function renderLogs(data) {
           <td class="logs-col-model" data-mobile-label="${logMobileLabels.model}">${modelDisplay}</td>
           <td class="logs-col-status" data-mobile-label="${logMobileLabels.status}"><span class="${statusClass}">${statusCode}</span></td>
           <td class="logs-col-timing" data-mobile-label="${logMobileLabels.timing}" style="text-align: right; white-space: nowrap;">${responseTimingDisplay}</td>
+          <td class="logs-col-speed${speedDisplay ? '' : ' mobile-empty-cell'}" data-mobile-label="${logMobileLabels.speed}" style="text-align: right; white-space: nowrap;">${speedDisplay}</td>
           <td class="logs-col-input${inputTokensDisplay ? '' : ' mobile-empty-cell'}" data-mobile-label="${logMobileLabels.input}" style="text-align: right; white-space: nowrap;">${inputTokensDisplay}</td>
           <td class="logs-col-output${outputTokensDisplay ? '' : ' mobile-empty-cell'}" data-mobile-label="${logMobileLabels.output}" style="text-align: right; white-space: nowrap;">${outputTokensDisplay}</td>
           <td class="logs-col-cache-read${cacheReadDisplay ? '' : ' mobile-empty-cell'}" data-mobile-label="${logMobileLabels.cacheRead}" style="text-align: right; white-space: nowrap;">${cacheReadDisplay}</td>
