@@ -567,6 +567,7 @@ function selectAllVisibleChannels() {
     }
   });
   filterChannels();
+  updateBatchChannelSelectionUI();
 }
 
 function toggleVisibleChannelsSelection() {
@@ -602,6 +603,7 @@ function deselectVisibleChannels() {
     selectedChannelIds.delete(channelID);
   });
   filterChannels();
+  updateBatchChannelSelectionUI();
 }
 
 function clearSelectedChannels() {

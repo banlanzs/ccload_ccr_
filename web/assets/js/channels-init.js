@@ -89,12 +89,7 @@ function initChannelsPageActions() {
         }
       },
       change: {
-        'update-test-url': () => updateTestURL(),
-        'toggle-visible-channels-selection': () => {
-          if (typeof window.toggleVisibleChannelsSelection === 'function') {
-            window.toggleVisibleChannelsSelection();
-          }
-        }
+        'update-test-url': () => updateTestURL()
       }
     });
   }
