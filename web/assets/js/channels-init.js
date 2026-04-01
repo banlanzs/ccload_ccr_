@@ -75,6 +75,7 @@ function initChannelsPageActions() {
         'batch-refresh-channels-replace': () => batchRefreshSelectedChannelsReplace(),
         'batch-edit-common-models': () => openBatchEditCommonModels(),
         'batch-set-priority': () => openBatchSetPriority(),
+        'batch-delete-channels': () => batchDeleteSelectedChannels(),
         'clear-selected-channels': () => clearSelectedChannels(),
         'close-test-modal': () => closeTestModal(),
         'run-channel-test': () => runChannelTest(),

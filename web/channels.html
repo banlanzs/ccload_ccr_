@@ -244,6 +244,18 @@
                 </span>
                 <span data-i18n="channels.batchSetPriority">批量设置优先级</span>
               </button>
+              <button id="batchDeleteChannelsBtn" type="button"
+                class="btn btn-sm channel-batch-action channel-batch-action--delete"
+                data-action="batch-delete-channels" disabled>
+                <span class="channel-batch-action__icon" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 7h10l-.8 9.2a1.5 1.5 0 0 1-1.5 1.3H7.3a1.5 1.5 0 0 1-1.5-1.3L5 7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                    <path d="M3.5 5h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M8 5V3.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <span data-i18n="channels.batchDeleteChannels">批量删除</span>
+              </button>
             </div>
             <button id="batchFloatingMenuCloseBtn" type="button" class="channel-batch-close"
               data-action="clear-selected-channels" data-i18n-title="common.close" title="关闭" disabled>
