@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -547,21 +548,17 @@ func (s *Server) handleUpdateChannel(c *gin.Context, id int64) {
 
 // 删除渠道
 func (s *Server) handleDeleteChannel(c *gin.Context, id int64) {
-	if err := s.store.DeleteConfig(c.Request.Context(), id); err != nil {
-		RespondError(c, http.StatusNotFound, err)
+	deleted, err := s.deleteChannelByID(c.Request.Context(), id)
+	if err != nil {
+		RespondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	// 删除渠道对应的轮询计数器，避免KeySelector内部状态泄漏
-	if s.keySelector != nil {
-		s.keySelector.RemoveChannelCounter(id)
+	if !deleted {
+		RespondErrorMsg(c, http.StatusNotFound, "channel not found")
+		return
 	}
-	// 删除渠道时同步清理 URLSelector 内存状态。
-	if s.urlSelector != nil {
-		s.urlSelector.RemoveChannel(id)
-	}
-	// 删除渠道后刷新缓存，确保选择器立即生效
+
 	s.InvalidateChannelListCache()
-	// 数据库级联删除会自动清理冷却数据（无需手动清理缓存）
 	RespondJSON(c, http.StatusOK, gin.H{"id": id})
 }
 
@@ -845,6 +842,7 @@ func (s *Server) HandleBatchSetEnabled(c *gin.Context) {
 	})
 }
 
+// HandleBatchDeleteChannels 批量删除渠道
 // POST /admin/channels/batch-delete
 func (s *Server) HandleBatchDeleteChannels(c *gin.Context) {
 	var req struct {
@@ -865,27 +863,19 @@ func (s *Server) HandleBatchDeleteChannels(c *gin.Context) {
 	ctx := c.Request.Context()
 	deleted := 0
 	failed := 0
-	notFound := 0
+	notFound := make([]int64, 0)
 
 	for _, channelID := range channelIDs {
-		if _, err := s.store.GetConfig(ctx, channelID); err != nil {
-			notFound++
-			continue
-		}
-
-		if err := s.store.DeleteConfig(ctx, channelID); err != nil {
+		wasDeleted, err := s.deleteChannelByID(ctx, channelID)
+		if err != nil {
 			log.Printf("batch-delete: delete channel %d failed: %v", channelID, err)
 			failed++
 			continue
 		}
-
-		if s.keySelector != nil {
-			s.keySelector.RemoveChannelCounter(channelID)
+		if !wasDeleted {
+			notFound = append(notFound, channelID)
+			continue
 		}
-		if s.urlSelector != nil {
-			s.urlSelector.RemoveChannel(channelID)
-		}
-
 		deleted++
 	}
 
@@ -894,9 +884,11 @@ func (s *Server) HandleBatchDeleteChannels(c *gin.Context) {
 	}
 
 	RespondJSON(c, http.StatusOK, gin.H{
-		"deleted":   deleted,
-		"failed":    failed,
-		"not_found": notFound,
+		"total":           len(channelIDs),
+		"deleted":         deleted,
+		"failed":          failed,
+		"not_found":       notFound,
+		"not_found_count": len(notFound),
 	})
 }
 
@@ -1114,4 +1106,29 @@ func (s *Server) HandleBatchEditModels(c *gin.Context) {
 		"not_found":       notFound,
 		"not_found_count": len(notFound),
 	})
+}
+
+// deleteChannelByID 删除指定渠道及其关联状态（Key计数器、URL选择器）
+func (s *Server) deleteChannelByID(ctx context.Context, id int64) (bool, error) {
+	if id <= 0 {
+		return false, nil
+	}
+
+	if _, err := s.store.GetConfig(ctx, id); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if err := s.store.DeleteConfig(ctx, id); err != nil {
+		return false, err
+	}
+	if s.keySelector != nil {
+		s.keySelector.RemoveChannelCounter(id)
+	}
+	if s.urlSelector != nil {
+		s.urlSelector.RemoveChannel(id)
+	}
+	return true, nil
 }
