@@ -275,6 +275,9 @@ func (s *Server) handleSuccessResponse(
 	readStats *streamReadStats,
 	firstBodyReadTimeSec *float64,
 ) (*fwResult, float64, error) {
+	// [CONTINUE-DEBUG] 确认函数被调用
+	log.Printf("[CONTINUE-DEBUG] handleSuccessResponse called: isStreaming=%v contentType=%q channelType=%q",
+		reqCtx.isStreaming, resp.Header.Get("Content-Type"), channelType)
 	// [FIX] 流式请求：禁用 WriteTimeout，避免长时间流被服务器自己切断
 	// Go 1.20+ http.ResponseController 支持动态调整 WriteDeadline
 	if reqCtx.isStreaming {
