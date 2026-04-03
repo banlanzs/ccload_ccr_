@@ -263,6 +263,14 @@ func buildStreamDiagnostics(streamErr error, readStats *streamReadStats, streamC
 			streamErr, bytesRead, readCount, streamComplete, channelType, contentType)
 	}
 
+	// [FIX] 上游静默截断：无错误（EOF被正常处理）但未收到流结束标志
+	// 场景：上游发完部分内容后直接关闭连接，没有发送 [DONE] 或 message_stop
+	// 这是最常见的"回复中断"场景，之前被误判为成功（200/ok）
+	if streamErr == nil && !streamComplete && bytesRead > 0 && strings.Contains(contentType, "text/event-stream") {
+		return fmt.Sprintf("[WARN] 流提前结束(无结束标志): 已读取=%d字节(分%d次) | 渠道=%s",
+			bytesRead, readCount, channelType)
+	}
+
 	return ""
 }
 
