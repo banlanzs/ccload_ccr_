@@ -105,6 +105,10 @@ type fwResult struct {
 
 	// ContinueInjected 是否注入了 continue 提示（finish_reason=length 触发）
 	ContinueInjected bool
+
+	// StreamComplete 流是否正常完成（收到 message_stop / [DONE]）
+	// false 表示流被截断或异常中断
+	StreamComplete bool
 }
 
 // ForwardObserver 封装转发过程中的观测回调（遵循SRP，避免函数签名膨胀）

@@ -341,9 +341,10 @@ func (s *Server) handleSuccessResponse(
 		Status:            resp.StatusCode,
 		Header:            hdrClone,
 		FirstByteTime:     *firstBodyReadTimeSec,
-		BytesReceived:     readStats.totalBytes, // 记录已接收字节数，用于499诊断
+		BytesReceived:     readStats.totalBytes,
 		ResponseCommitted: deferredWriter == nil || deferredWriter.Committed(),
 		ContinueInjected:  continueInjected,
+		StreamComplete:    streamComplete,
 	}
 
 	// 提取usage数据和错误事件
@@ -627,6 +628,10 @@ func (s *Server) forwardAttempt(
 	// [INFO] 修复：handleResponse可能返回err即使StatusCode=200（例如Content-Length=0）
 	// [FIX] 2025-12: 传递 res 和 reqCtx，用于保留 499 场景下已消耗的 token 统计
 	if err != nil {
+		if reqCtx.isStreaming {
+			log.Printf("[INTERRUPT] 网络错误: 渠道=%s(ID=%d) 模型=%s 错误=%v",
+				cfg.Name, cfg.ID, actualModel, err)
+		}
 		return s.handleNetworkError(
 			ctx, cfg, keyIndex, actualModel, selectedKey, reqCtx.tokenID, reqCtx.clientIP,
 			duration, err, res, reqCtx, deferChannelCooldown,
@@ -684,10 +689,24 @@ func (s *Server) forwardAttempt(
 			log.Printf("[CONTINUE] 已注入 continue 提示: 渠道=%s(ID=%d) 模型=%s",
 				cfg.Name, cfg.ID, actualModel)
 		}
+		// [INTERRUPT] 流式请求异常中断记录
+		// 条件：流式请求 + 未正常完成（无 message_stop/[DONE]）+ 非 continue 注入（已单独记录）
+		if reqCtx.isStreaming && !res.StreamComplete && !res.ContinueInjected && res.BytesReceived > 0 {
+			reason := "流提前结束(无结束标志)"
+			if res.StreamDiagMsg != "" {
+				reason = res.StreamDiagMsg
+			}
+			log.Printf("[INTERRUPT] 回复异常中断: 渠道=%s(ID=%d) 模型=%s 原因=%s 已接收=%d字节",
+				cfg.Name, cfg.ID, actualModel, reason, res.BytesReceived)
+		}
 		return proxyRes, action
 	}
 
 	// 处理错误响应
+	if reqCtx.isStreaming {
+		log.Printf("[INTERRUPT] 上游错误: 渠道=%s(ID=%d) 模型=%s 状态码=%d",
+			cfg.Name, cfg.ID, actualModel, res.Status)
+	}
 	return s.handleProxyErrorResponse(
 		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
 	)
