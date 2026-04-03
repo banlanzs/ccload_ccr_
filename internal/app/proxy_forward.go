@@ -316,9 +316,12 @@ func (s *Server) handleSuccessResponse(
 	// [CONTINUE] finish_reason=length 检测：模型因 context 限制提前截断
 	// 在流正常结束后向 CLI 注入一个 "\n\ncontinue" 提示，让 CLI 自动继续工作
 	// 条件：流无错误完成 + 检测到 finish_reason=length/max_tokens + 是 SSE 流
+	// 注意：text/plain 伪装的 SSE 也需要注入（looksLikeSSE 分支）
 	continueInjected := false
+	isSSEResponse := strings.Contains(contentType, "text/event-stream") ||
+		(strings.Contains(contentType, "text/plain") && reqCtx.isStreaming)
 	if streamErr == nil && parser != nil && parser.IsTruncatedByLength() &&
-		reqCtx.isStreaming && strings.Contains(contentType, "text/event-stream") {
+		reqCtx.isStreaming && isSSEResponse {
 		injectContinueChunk(streamWriter, channelType)
 		continueInjected = true
 		log.Printf("[CONTINUE] 检测到 finish_reason=length，已注入 continue 提示 (渠道=%s)", channelType)
