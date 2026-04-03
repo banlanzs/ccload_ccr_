@@ -28,7 +28,7 @@ let filters = {
   search: '',
   id: '',
   channelType: 'all',
-  status: 'all',
+  status: 'enabled',
   model: 'all'
 };
 

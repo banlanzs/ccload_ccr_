@@ -165,7 +165,7 @@ window.initPageBootstrap({
     document.getElementById('idFilter').value = '';
     saveChannelsFilters();
   } else if (savedFilters) {
-    filters.status = savedFilters.status || 'all';
+    filters.status = savedFilters.status || 'enabled';
     filters.model = savedFilters.model || 'all';
     filters.search = savedFilters.search || '';
     filters.id = savedFilters.id || '';
