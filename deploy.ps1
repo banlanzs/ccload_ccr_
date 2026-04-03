@@ -60,4 +60,4 @@ Start-Process -FilePath $DstExe -WorkingDirectory $DstDir
 Write-Host "      已启动：$DstExe" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "部署完成 ✓" -ForegroundColor Green
+Write-Host "Deploy done." -ForegroundColor Green
