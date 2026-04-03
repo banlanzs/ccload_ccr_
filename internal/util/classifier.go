@@ -141,7 +141,7 @@ var statusCodeMetaMap = map[int]StatusCodeMeta{
 	// 作为渠道级故障处理：触发渠道冷却。
 	405: {ErrorLevelChannel}, // Method Not Allowed
 	406: {ErrorLevelClient},  // Not Acceptable
-	410: {ErrorLevelClient},  // Gone
+	410: {ErrorLevelChannel}, // Gone - 资源已过期，触发渠道切换重试
 	413: {ErrorLevelClient},  // Payload Too Large
 	414: {ErrorLevelClient},  // URI Too Long
 	415: {ErrorLevelClient},  // Unsupported Media Type
