@@ -102,6 +102,9 @@ type fwResult struct {
 	// OpenAI service_tier（2026-03新增）
 	// 响应中的 service_tier 字段决定计费倍率：priority=2x, flex=0.5x, default=1x
 	ServiceTier string
+
+	// ContinueInjected 是否注入了 continue 提示（finish_reason=length 触发）
+	ContinueInjected bool
 }
 
 // ForwardObserver 封装转发过程中的观测回调（遵循SRP，避免函数签名膨胀）
@@ -689,6 +692,10 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 				entry.Message = res.StreamDiagMsg
 			} else {
 				entry.Message = "ok"
+			}
+			// [CONTINUE] continue 注入标注
+			if res.ContinueInjected {
+				entry.Message += " [continue injected]"
 			}
 		} else {
 			msg := fmt.Sprintf("upstream status %d", p.StatusCode)
