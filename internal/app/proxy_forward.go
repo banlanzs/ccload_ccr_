@@ -334,8 +334,6 @@ func (s *Server) handleSuccessResponse(
 		continueInjected = true
 		// 注入后清除 streamErr：截断是上游行为，不应触发渠道冷却
 		streamErr = nil
-		log.Printf("[CONTINUE] 检测到上游截断，已注入 continue 提示 (渠道=%s, streamComplete=%v)",
-			channelType, streamComplete)
 	}
 
 	// 构建结果
@@ -680,7 +678,13 @@ func (s *Server) forwardAttempt(
 			return s.handleStreamingErrorNoRetry(ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx)
 		}
 
-		return s.handleProxySuccess(ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx)
+		proxyRes, action := s.handleProxySuccess(ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx)
+		// [CONTINUE] 记录 continue 注入信息（带渠道和模型）
+		if res.ContinueInjected {
+			log.Printf("[CONTINUE] 已注入 continue 提示: 渠道=%s(ID=%d) 模型=%s",
+				cfg.Name, cfg.ID, actualModel)
+		}
+		return proxyRes, action
 	}
 
 	// 处理错误响应
@@ -688,7 +692,6 @@ func (s *Server) forwardAttempt(
 		ctx, cfg, keyIndex, actualModel, selectedKey, res, duration, reqCtx, deferChannelCooldown,
 	)
 }
-
 // ============================================================================
 // 渠道内Key重试
 // ============================================================================
