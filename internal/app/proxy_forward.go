@@ -318,6 +318,7 @@ func (s *Server) handleSuccessResponse(
 	//   1. finish_reason=length / stop_reason=max_tokens（标准信号，部分渠道支持）
 	//   2. 流静默截断：无错误结束但未收到流结束标志（message_stop/[DONE]）
 	//      ——上游直接关闭连接，不发送任何结束事件（本渠道的实际行为）
+	// 排除：stop_reason=tool_use/end_turn（正常结束，不需要 continue）
 	// 注入内容："\n\ncontinue"，让 CLI 自动继续工作
 	streamComplete := parser != nil && parser.IsStreamComplete()
 	continueInjected := false
@@ -325,7 +326,9 @@ func (s *Server) handleSuccessResponse(
 		(strings.Contains(contentType, "text/plain") && reqCtx.isStreaming)
 	isTruncated := (parser != nil && parser.IsTruncatedByLength()) ||
 		(streamErr == nil && !streamComplete && readStats != nil && readStats.totalBytes > 0)
-	if streamErr == nil && isTruncated && reqCtx.isStreaming && isSSEResponse {
+	// 排除正常结束（tool_use / end_turn）：这些情况 streamComplete=true
+	// streamComplete=true 说明收到了 message_stop，是正常结束，不注入
+	if streamErr == nil && isTruncated && !streamComplete && reqCtx.isStreaming && isSSEResponse {
 		injectContinueChunk(streamWriter, channelType)
 		continueInjected = true
 		log.Printf("[CONTINUE] 检测到上游截断，已注入 continue 提示 (渠道=%s, finish_reason=%v, streamComplete=%v)",
