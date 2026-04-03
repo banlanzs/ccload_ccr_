@@ -314,25 +314,28 @@ func (s *Server) handleSuccessResponse(
 	}
 
 	// [CONTINUE] 上游截断检测：模型因 context 限制提前结束输出
-	// 触发条件（两种）：
-	//   1. finish_reason=length / stop_reason=max_tokens（标准信号，部分渠道支持）
+	// 触发条件（三种）：
+	//   1. finish_reason=length / stop_reason=max_tokens（标准信号）
 	//   2. 流静默截断：无错误结束但未收到流结束标志（message_stop/[DONE]）
-	//      ——上游直接关闭连接，不发送任何结束事件（本渠道的实际行为）
-	// 排除：stop_reason=tool_use/end_turn（正常结束，不需要 continue）
+	//   3. 流超时/连接关闭：有数据传输但未收到流结束标志（上游停止发送后超时）
+	// 排除：streamComplete=true（收到 message_stop，正常结束）
+	// 排除：abortedBeforeCommit（SSE error 事件中止，走重试路径）
 	// 注入内容："\n\ncontinue"，让 CLI 自动继续工作
 	streamComplete := parser != nil && parser.IsStreamComplete()
 	continueInjected := false
 	isSSEResponse := strings.Contains(contentType, "text/event-stream") ||
 		(strings.Contains(contentType, "text/plain") && reqCtx.isStreaming)
-	isTruncated := (parser != nil && parser.IsTruncatedByLength()) ||
-		(streamErr == nil && !streamComplete && readStats != nil && readStats.totalBytes > 0)
-	// 排除正常结束（tool_use / end_turn）：这些情况 streamComplete=true
-	// streamComplete=true 说明收到了 message_stop，是正常结束，不注入
-	if streamErr == nil && isTruncated && !streamComplete && reqCtx.isStreaming && isSSEResponse {
+	// 截断判断：有数据 + 未完成 + 非客户端主动断开 + 非 SSE error 中止
+	hasData := readStats != nil && readStats.totalBytes > 0
+	isClientDisconnect := streamErr != nil && isClientDisconnectError(streamErr)
+	isTruncated := !streamComplete && hasData && !isClientDisconnect && !abortedBeforeCommit
+	if isTruncated && reqCtx.isStreaming && isSSEResponse {
 		injectContinueChunk(streamWriter, channelType)
 		continueInjected = true
-		log.Printf("[CONTINUE] 检测到上游截断，已注入 continue 提示 (渠道=%s, finish_reason=%v, streamComplete=%v)",
-			channelType, parser != nil && parser.IsTruncatedByLength(), streamComplete)
+		// 注入后清除 streamErr：截断是上游行为，不应触发渠道冷却
+		streamErr = nil
+		log.Printf("[CONTINUE] 检测到上游截断，已注入 continue 提示 (渠道=%s, streamComplete=%v)",
+			channelType, streamComplete)
 	}
 
 	// 构建结果
