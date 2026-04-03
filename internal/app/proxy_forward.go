@@ -178,6 +178,10 @@ func streamAndParseResponse(
 	isStreaming bool,
 	beforeWrite func(usageParser) error,
 ) (usageParser, error) {
+	// [CONTINUE-DEBUG] 记录实际 Content-Type，诊断 parser 分支选择
+	if isStreaming {
+		log.Printf("[CONTINUE-DEBUG] streamAndParseResponse: contentType=%q channelType=%q", contentType, channelType)
+	}
 	makeFeed := func(parser usageParser) func([]byte) error {
 		return func(data []byte) error {
 			if err := parser.Feed(data); err != nil {
