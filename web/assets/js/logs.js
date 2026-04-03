@@ -9,7 +9,7 @@ let authTokens = []; // 令牌列表
 let logsDefaultTestContent = 'sonnet 4.0的发布日期是什么'; // 默认测试内容（从设置加载）
 let logChannelClickAction = 'edit'; // 渠道点击行为（从设置加载：edit=编辑弹窗, navigate=跳转渠道页）
 
-const ACTIVE_REQUESTS_POLL_INTERVAL_MS = 2000;
+const ACTIVE_REQUESTS_POLL_INTERVAL_MS = 5000;
 let activeRequestsPollTimer = null;
 let activeRequestsFetchInFlight = false;
 let lastActiveRequestIDs = null; // 上次活跃请求ID集合（后端原始数据，用于检测完成）

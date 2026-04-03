@@ -40,7 +40,7 @@ async function loadChannelStatsRange() {
 
 async function loadChannelStats(range = channelStatsRange) {
   try {
-    const params = new URLSearchParams({ range, limit: '500', offset: '0' });
+    const params = new URLSearchParams({ range, limit: '200', offset: '0' });
     const data = await fetchDataWithAuth(`/admin/stats?${params.toString()}`);
     channelStatsById = aggregateChannelStats((data && data.stats) || [], data && data.channel_health);
     filterChannels();
