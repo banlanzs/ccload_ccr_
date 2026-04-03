@@ -4,10 +4,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -87,6 +90,12 @@ func main() {
 	// 优先读取.env文件
 	if err := godotenv.Load(); err != nil {
 		log.Printf("No .env file found: %v", err)
+	}
+
+	// 初始化日志文件（tee 到 log/ 目录，按日期+启动序号分文件）
+	logCloser := setupFileLogger()
+	if logCloser != nil {
+		defer logCloser()
 	}
 
 	// 设置Gin运行模式
@@ -224,5 +233,50 @@ func main() {
 		execSelf()
 		// execSelf 不会返回，如果到这里说明重启失败
 		log.Println("[ERROR] 重启失败，程序退出")
+	}
+}
+
+// setupFileLogger 将 log 输出同时写入 log/ 目录下的日志文件。
+// 文件命名：log/YYYY-MM-DD_N.log，N 为当天启动序号（从 1 开始）。
+// 返回 closer 函数，main 退出时调用以刷新并关闭文件。
+func setupFileLogger() func() {
+	// 确定 exe 同级目录
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Printf("[WARN] setupFileLogger: 获取 exe 路径失败: %v", err)
+		return nil
+	}
+	exeDir := filepath.Dir(exePath)
+	logDir := filepath.Join(exeDir, "log")
+
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		log.Printf("[WARN] setupFileLogger: 创建 log 目录失败: %v", err)
+		return nil
+	}
+
+	// 按日期+序号找一个未使用的文件名
+	today := time.Now().Format("2006-01-02")
+	var logFile *os.File
+	for n := 1; n <= 9999; n++ {
+		name := filepath.Join(logDir, fmt.Sprintf("%s_%d.log", today, n))
+		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			logFile = f
+			break
+		}
+	}
+	if logFile == nil {
+		log.Printf("[WARN] setupFileLogger: 无法创建日志文件")
+		return nil
+	}
+
+	// tee：同时写 stderr（控制台）和文件
+	tee := io.MultiWriter(os.Stderr, logFile)
+	log.SetOutput(tee)
+	log.Printf("[INFO] 日志文件: %s", logFile.Name())
+
+	return func() {
+		log.SetOutput(os.Stderr) // 恢复，避免 defer 顺序问题
+		_ = logFile.Close()
 	}
 }

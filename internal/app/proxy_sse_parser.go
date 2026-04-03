@@ -171,8 +171,6 @@ func (p *sseUsageParser) parseBuffer() error {
 
 // parseEvent 解析单个SSE事件
 func (p *sseUsageParser) parseEvent(eventType, data string) error {
-	// [CONTINUE-DEBUG] 打印所有事件类型
-	log.Printf("[CONTINUE-DEBUG] parseEvent: type=%q dataLen=%d", eventType, len(data))
 	// [INFO] 事件类型过滤优化（2025-12-07）
 	// 问题：anyrouter等聚合服务使用非标准事件类型（如"."），导致usage丢失
 	// 方案：改为黑名单模式 - 只过滤已知无用事件，其他都尝试解析

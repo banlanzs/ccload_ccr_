@@ -178,10 +178,6 @@ func streamAndParseResponse(
 	isStreaming bool,
 	beforeWrite func(usageParser) error,
 ) (usageParser, error) {
-	// [CONTINUE-DEBUG] 记录实际 Content-Type，诊断 parser 分支选择
-	if isStreaming {
-		log.Printf("[CONTINUE-DEBUG] streamAndParseResponse: contentType=%q channelType=%q", contentType, channelType)
-	}
 	makeFeed := func(parser usageParser) func([]byte) error {
 		return func(data []byte) error {
 			if err := parser.Feed(data); err != nil {
@@ -275,9 +271,6 @@ func (s *Server) handleSuccessResponse(
 	readStats *streamReadStats,
 	firstBodyReadTimeSec *float64,
 ) (*fwResult, float64, error) {
-	// [CONTINUE-DEBUG] 确认函数被调用
-	log.Printf("[CONTINUE-DEBUG] handleSuccessResponse called: isStreaming=%v contentType=%q channelType=%q",
-		reqCtx.isStreaming, resp.Header.Get("Content-Type"), channelType)
 	// [FIX] 流式请求：禁用 WriteTimeout，避免长时间流被服务器自己切断
 	// Go 1.20+ http.ResponseController 支持动态调整 WriteDeadline
 	if reqCtx.isStreaming {
@@ -430,9 +423,6 @@ func (s *Server) handleResponse(
 	observer *ForwardObserver,
 ) (*fwResult, float64, error) {
 	hdrClone := resp.Header.Clone()
-	// [CONTINUE-DEBUG] 必经之路
-	log.Printf("[CONTINUE-DEBUG] handleResponse: status=%d isStreaming=%v ct=%q",
-		resp.StatusCode, reqCtx.isStreaming, resp.Header.Get("Content-Type"))
 
 	// 首字节响应时间（秒）：以第一次从 resp.Body 读到 n>0 的时刻为准。
 	// 流式请求：该时刻同时用于停止 firstByteTimeout。
