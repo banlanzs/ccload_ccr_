@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 import (
 	"bufio"
@@ -177,14 +177,9 @@ func streamAndParseResponse(
 	channelType string,
 	isStreaming bool,
 	beforeWrite func(usageParser) error,
-	textCollector *streamTextCollector,
 ) (usageParser, error) {
 	makeFeed := func(parser usageParser) func([]byte) error {
 		return func(data []byte) error {
-			// 收集文本（用于续写）
-			if textCollector != nil {
-				textCollector.Feed(data)
-			}
 			if err := parser.Feed(data); err != nil {
 				return err
 			}
@@ -263,14 +258,6 @@ func buildStreamDiagnostics(streamErr error, readStats *streamReadStats, streamC
 			streamErr, bytesRead, readCount, streamComplete, channelType, contentType)
 	}
 
-	// [FIX] 上游静默截断：无错误（EOF被正常处理）但未收到流结束标志
-	// 场景：上游发完部分内容后直接关闭连接，没有发送 [DONE] 或 message_stop
-	// 这是最常见的"回复中断"场景，之前被误判为成功（200/ok）
-	if streamErr == nil && !streamComplete && bytesRead > 0 && strings.Contains(contentType, "text/event-stream") {
-		return fmt.Sprintf("[WARN] 流提前结束(无结束标志): 已读取=%d字节(分%d次) | 渠道=%s",
-			bytesRead, readCount, channelType)
-	}
-
 	return ""
 }
 
@@ -306,18 +293,10 @@ func (s *Server) handleSuccessResponse(
 
 	// 流式传输并解析usage
 	contentType := resp.Header.Get("Content-Type")
-
-	// [RESUME] 流式请求时，同时收集 assistant 输出文本，用于流中断后的续写重试
-	var textCollector *streamTextCollector
-	if reqCtx.isStreaming {
-		textCollector = &streamTextCollector{}
-	}
-
 	parser, streamErr := streamAndParseResponse(
 		reqCtx.ctx, resp.Body, streamWriter, contentType, channelType, reqCtx.isStreaming,
 		func(parser usageParser) error {
 			if deferredWriter == nil || deferredWriter.Committed() {
-				// 已提交：继续收集文本（用于续写）
 				return nil
 			}
 			if parser.GetLastError() != nil {
@@ -326,7 +305,6 @@ func (s *Server) handleSuccessResponse(
 			deferredWriter.Commit()
 			return nil
 		},
-		textCollector,
 	)
 	abortedBeforeCommit := errors.Is(streamErr, errAbortStreamBeforeWrite)
 	if abortedBeforeCommit {
@@ -342,11 +320,6 @@ func (s *Server) handleSuccessResponse(
 		FirstByteTime:     *firstBodyReadTimeSec,
 		BytesReceived:     readStats.totalBytes, // 记录已接收字节数，用于499诊断
 		ResponseCommitted: deferredWriter == nil || deferredWriter.Committed(),
-	}
-
-	// [RESUME] 流中断时，保存已收集的 assistant 文本，供续写重试使用
-	if textCollector != nil && !textCollector.Truncated() {
-		result.PartialAssistantText = textCollector.Text()
 	}
 
 	// 提取usage数据和错误事件
@@ -742,11 +715,6 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 	// [INFO] 修复：保存重定向后的模型名称，用于日志记录和调试
 	actualModel, bodyToSend := s.prepareRequestBody(cfg, reqCtx)
 
-	// [RESUME] 续写场景：用续写请求体覆盖原始请求体
-	if len(reqCtx.resumeBody) > 0 {
-		bodyToSend = reqCtx.resumeBody
-	}
-
 	// [FIX] 2026-01: 模型名变更时同步替换 URL 路径
 	// 场景：Gemini API 的模型名在 URL 路径中（如 /v1beta/models/gemini-3-flash:streamGenerateContent）
 	// 如果模糊匹配将 gemini-3-flash 改为 gemini-3-flash-preview，URL 路径也需要同步更新
@@ -803,13 +771,8 @@ func (s *Server) tryChannelWithKeys(ctx context.Context, cfg *model.Config, reqC
 			}
 
 			shouldDeferChannelCooldown := len(urls) > 1 && urlIdx < len(sortedURLs)-1
-			// [RESUME] 续写场景：使用 resumeResponseWriter 忽略重复的 WriteHeader
-			attemptWriter := http.ResponseWriter(w)
-			if len(reqCtx.resumeBody) > 0 {
-				attemptWriter = newResumeResponseWriter(w)
-			}
 			result, nextAction := s.forwardAttempt(
-				ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, urlEntry.url, attemptWriter, shouldDeferChannelCooldown)
+				ctx, cfg, keyIndex, selectedKey, reqCtx, actualModel, bodyToSend, requestPath, urlEntry.url, w, shouldDeferChannelCooldown)
 
 			if result != nil && result.succeeded {
 				// 成功：记录TTFB到URLSelector（仅多URL场景）

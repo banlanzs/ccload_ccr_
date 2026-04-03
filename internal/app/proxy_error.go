@@ -117,7 +117,6 @@ func (s *Server) logProxyResult(
 		Result:       res,
 		ErrMsg:       errMsg,
 		StartTime:    reqCtx.attemptStartTime,
-		ResumeCount:  reqCtx.resumeCount,
 	}))
 }
 
@@ -435,16 +434,14 @@ func (s *Server) handleStreamingErrorNoRetry(
 	// 触发冷却（保护后续请求）
 	_ = s.applyCooldownDecision(ctx, cfg, httpErrorInput(cfg.ID, keyIndex, res))
 
-	// [RESUME] 流已提交但中断：携带 partialText，供上层续写重试
+	// 返回"成功"：数据已发送给客户端，不触发重试
 	return &proxyResult{
-		status:               res.Status,
-		channelID:            &cfg.ID,
-		duration:             duration,
-		succeeded:            false, // 标记为失败，触发渠道切换重试
-		nextAction:           cooldown.ActionRetryChannel,
-		partialAssistantText: res.PartialAssistantText,
-		responseCommitted:    true,
-	}, cooldown.ActionRetryChannel
+		status:     res.Status,
+		channelID:  &cfg.ID,
+		duration:   duration,
+		succeeded:  true, // 关键：标记为成功，避免触发重试逻辑
+		nextAction: cooldown.ActionReturnClient,
+	}, cooldown.ActionReturnClient
 }
 
 // handleProxyErrorResponse 处理代理错误响应（业务逻辑层）
