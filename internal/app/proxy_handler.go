@@ -359,7 +359,8 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 			if result.responseCommitted && result.partialAssistantText != "" && isStreaming {
 				resumeBody := buildResumeRequestBody(reqCtx.body, result.partialAssistantText)
 				if resumeBody != nil {
-					log.Printf("[RESUME] 流中断，切换渠道续写 (partial=%d chars)", len(result.partialAssistantText))
+					reqCtx.resumeCount++
+					log.Printf("[RESUME] 流中断，切换渠道续写 #%d (partial=%d chars)", reqCtx.resumeCount, len(result.partialAssistantText))
 					reqCtx.resumeBody = resumeBody
 					continue // 继续尝试下一个渠道
 				}

@@ -134,7 +134,8 @@ type proxyRequestContext struct {
 
 	// 续写相关（流中断后切换渠道时使用）
 	// resumeBody 非空时，表示本次是续写请求，使用此 body 替代原始 body
-	resumeBody []byte
+	resumeBody   []byte
+	resumeCount  int // 已触发续写的次数（用于日志记录）
 }
 
 // proxyResult 代理请求结果
@@ -653,6 +654,7 @@ type logEntryParams struct {
 	Result       *fwResult
 	ErrMsg       string
 	StartTime    time.Time // 渠道尝试开始时间（用于日志记录）
+	ResumeCount  int       // 续写触发次数（0 表示未触发）
 }
 
 // buildLogEntry 构建日志条目（消除重复代码，遵循DRY原则）
@@ -672,6 +674,7 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 		AuthTokenID: p.AuthTokenID,
 		ClientIP:    p.ClientIP,
 		BaseURL:     p.BaseURL,
+		ResumeCount: p.ResumeCount,
 	}
 
 	// 记录实际转发的模型（仅当发生重定向时）
@@ -701,6 +704,10 @@ func buildLogEntry(p logEntryParams) *model.LogEntry {
 				entry.Message = res.StreamDiagMsg
 			} else {
 				entry.Message = "ok"
+			}
+			// [RESUME] 续写触发时在 message 里标注
+			if p.ResumeCount > 0 {
+				entry.Message = fmt.Sprintf("%s [resumed×%d]", entry.Message, p.ResumeCount)
 			}
 		} else {
 			msg := fmt.Sprintf("upstream status %d", p.StatusCode)
