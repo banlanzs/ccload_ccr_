@@ -206,20 +206,14 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 	if !p.truncatedByLength {
 		if choices, ok := event["choices"].([]any); ok && len(choices) > 0 {
 			if choice, ok := choices[0].(map[string]any); ok {
-				if reason, _ := choice["finish_reason"].(string); reason != "" {
-					log.Printf("[CONTINUE-DEBUG] finish_reason=%q (eventType=%q)", reason, eventType)
-					if reason == "length" {
-						p.truncatedByLength = true
-					}
+				if reason, _ := choice["finish_reason"].(string); reason == "length" {
+					p.truncatedByLength = true
 				}
 			}
 		}
 		if delta, ok := event["delta"].(map[string]any); ok {
-			if reason, _ := delta["stop_reason"].(string); reason != "" {
-				log.Printf("[CONTINUE-DEBUG] stop_reason=%q (eventType=%q)", reason, eventType)
-				if reason == "max_tokens" {
-					p.truncatedByLength = true
-				}
+			if reason, _ := delta["stop_reason"].(string); reason == "max_tokens" {
+				p.truncatedByLength = true
 			}
 		}
 	}
