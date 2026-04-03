@@ -44,6 +44,11 @@ type sseUsageParser struct {
 	// OpenAI: data: [DONE]
 	// Anthropic: event: message_stop
 	streamComplete bool
+
+	// [INFO] 新增：finish_reason=length 检测（模型因 context 限制提前截断）
+	// OpenAI: choices[].finish_reason = "length"
+	// Anthropic: delta.stop_reason = "max_tokens"
+	truncatedByLength bool
 }
 
 type jsonUsageParser struct {
@@ -56,8 +61,9 @@ type jsonUsageParser struct {
 type usageParser interface {
 	Feed([]byte) error
 	GetUsage() (inputTokens, outputTokens, cacheRead, cacheCreation int)
-	GetLastError() []byte   // [INFO] 返回SSE流中检测到的最后一个error事件（用于1308等错误的延迟处理）
-	IsStreamComplete() bool // [INFO] 返回是否检测到流结束标志（[DONE]/message_stop）
+	GetLastError() []byte      // [INFO] 返回SSE流中检测到的最后一个error事件（用于1308等错误的延迟处理）
+	IsStreamComplete() bool    // [INFO] 返回是否检测到流结束标志（[DONE]/message_stop）
+	IsTruncatedByLength() bool // [INFO] 返回是否因 context 限制被截断（finish_reason=length/max_tokens）
 }
 
 const (
@@ -194,6 +200,24 @@ func (p *sseUsageParser) parseEvent(eventType, data string) error {
 		return fmt.Errorf("json unmarshal failed: %w", err)
 	}
 
+	// [CONTINUE] finish_reason=length / stop_reason=max_tokens 检测
+	// OpenAI: choices[0].finish_reason = "length"
+	// Anthropic: delta.stop_reason = "max_tokens"
+	if !p.truncatedByLength {
+		if choices, ok := event["choices"].([]any); ok && len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]any); ok {
+				if reason, _ := choice["finish_reason"].(string); reason == "length" {
+					p.truncatedByLength = true
+				}
+			}
+		}
+		if delta, ok := event["delta"].(map[string]any); ok {
+			if reason, _ := delta["stop_reason"].(string); reason == "max_tokens" {
+				p.truncatedByLength = true
+			}
+		}
+	}
+
 	// 提取 service_tier（OpenAI Chat/Responses API 顶层字段）
 	if tier, ok := event["service_tier"].(string); ok && tier != "" {
 		p.ServiceTier = tier
@@ -249,6 +273,11 @@ func (p *sseUsageParser) GetLastError() []byte {
 // [INFO] IsStreamComplete 返回是否检测到流结束标志
 func (p *sseUsageParser) IsStreamComplete() bool {
 	return p.streamComplete
+}
+
+// [INFO] IsTruncatedByLength 返回是否因 context 限制被截断
+func (p *sseUsageParser) IsTruncatedByLength() bool {
+	return p.truncatedByLength
 }
 
 func (p *jsonUsageParser) Feed(data []byte) error {
@@ -328,6 +357,11 @@ func (p *jsonUsageParser) GetLastError() []byte {
 // [INFO] IsStreamComplete 返回false（非流式请求无结束标志概念）
 func (p *jsonUsageParser) IsStreamComplete() bool {
 	return false // JSON解析器不处理流结束标志
+}
+
+// [INFO] IsTruncatedByLength 返回false（JSON解析器不处理 finish_reason）
+func (p *jsonUsageParser) IsTruncatedByLength() bool {
+	return false
 }
 
 func (u *usageAccumulator) applyUsage(usage map[string]any, channelType string) {
