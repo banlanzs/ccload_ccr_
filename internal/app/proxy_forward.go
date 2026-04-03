@@ -320,18 +320,23 @@ func (s *Server) handleSuccessResponse(
 		deferredWriter.Commit()
 	}
 
-	// [CONTINUE] finish_reason=length 检测：模型因 context 限制提前截断
-	// 在流正常结束后向 CLI 注入一个 "\n\ncontinue" 提示，让 CLI 自动继续工作
-	// 条件：流无错误完成 + 检测到 finish_reason=length/max_tokens + 是 SSE 流
-	// 注意：text/plain 伪装的 SSE 也需要注入（looksLikeSSE 分支）
+	// [CONTINUE] 上游截断检测：模型因 context 限制提前结束输出
+	// 触发条件（两种）：
+	//   1. finish_reason=length / stop_reason=max_tokens（标准信号，部分渠道支持）
+	//   2. 流静默截断：无错误结束但未收到流结束标志（message_stop/[DONE]）
+	//      ——上游直接关闭连接，不发送任何结束事件（本渠道的实际行为）
+	// 注入内容："\n\ncontinue"，让 CLI 自动继续工作
+	streamComplete := parser != nil && parser.IsStreamComplete()
 	continueInjected := false
 	isSSEResponse := strings.Contains(contentType, "text/event-stream") ||
 		(strings.Contains(contentType, "text/plain") && reqCtx.isStreaming)
-	if streamErr == nil && parser != nil && parser.IsTruncatedByLength() &&
-		reqCtx.isStreaming && isSSEResponse {
+	isTruncated := (parser != nil && parser.IsTruncatedByLength()) ||
+		(streamErr == nil && !streamComplete && readStats != nil && readStats.totalBytes > 0)
+	if streamErr == nil && isTruncated && reqCtx.isStreaming && isSSEResponse {
 		injectContinueChunk(streamWriter, channelType)
 		continueInjected = true
-		log.Printf("[CONTINUE] 检测到 finish_reason=length，已注入 continue 提示 (渠道=%s)", channelType)
+		log.Printf("[CONTINUE] 检测到上游截断，已注入 continue 提示 (渠道=%s, finish_reason=%v, streamComplete=%v)",
+			channelType, parser != nil && parser.IsTruncatedByLength(), streamComplete)
 	}
 
 	// 构建结果
@@ -345,7 +350,6 @@ func (s *Server) handleSuccessResponse(
 	}
 
 	// 提取usage数据和错误事件
-	var streamComplete bool
 	if parser != nil {
 		result.InputTokens, result.OutputTokens, result.CacheReadInputTokens, result.CacheCreationInputTokens = parser.GetUsage()
 
@@ -365,7 +369,7 @@ func (s *Server) handleSuccessResponse(
 		if errorEvent := parser.GetLastError(); errorEvent != nil {
 			result.SSEErrorEvent = errorEvent
 		}
-		streamComplete = parser.IsStreamComplete()
+		// streamComplete 已在上方提前计算
 	}
 
 	// 生成流诊断消息（仅流请求）
@@ -426,6 +430,9 @@ func (s *Server) handleResponse(
 	observer *ForwardObserver,
 ) (*fwResult, float64, error) {
 	hdrClone := resp.Header.Clone()
+	// [CONTINUE-DEBUG] 必经之路
+	log.Printf("[CONTINUE-DEBUG] handleResponse: status=%d isStreaming=%v ct=%q",
+		resp.StatusCode, reqCtx.isStreaming, resp.Header.Get("Content-Type"))
 
 	// 首字节响应时间（秒）：以第一次从 resp.Body 读到 n>0 的时刻为准。
 	// 流式请求：该时刻同时用于停止 firstByteTimeout。
