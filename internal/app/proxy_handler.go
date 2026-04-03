@@ -1,4 +1,4 @@
-package app
+﻿package app
 
 import (
 	"bytes"
@@ -354,11 +354,28 @@ func (s *Server) HandleProxyRequest(c *gin.Context) {
 				break
 			}
 
+			// [RESUME] 流已提交但中断：尝试续写重试
+			// 条件：响应已提交 + 有 partial text + 是流式请求
+			if result.responseCommitted && result.partialAssistantText != "" && isStreaming {
+				resumeBody := buildResumeRequestBody(reqCtx.body, result.partialAssistantText)
+				if resumeBody != nil {
+					log.Printf("[RESUME] 流中断，切换渠道续写 (partial=%d chars)", len(result.partialAssistantText))
+					reqCtx.resumeBody = resumeBody
+					continue // 继续尝试下一个渠道
+				}
+			}
+
+			// 流已提交但无法续写（格式不支持或无 partial text）：停止，避免乱写
+			if result.responseCommitted {
+				break
+			}
+
 			if shouldStopTryingChannels(result) {
 				break
 			}
 		}
 	}
+	reqCtx.resumeBody = nil // 清理续写 body
 
 	// 所有渠道都失败：返回“最后一次实际失败”的状态码（并映射内部状态码），避免一律伪装成503。
 	finalStatus := determineFinalClientStatus(lastResult)

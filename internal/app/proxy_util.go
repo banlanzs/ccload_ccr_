@@ -99,6 +99,10 @@ type fwResult struct {
 	// false 表示本次尝试仍可在同一请求内切换到其他Key/渠道
 	ResponseCommitted bool
 
+	// PartialAssistantText 流中断时已输出给客户端的 assistant 文本（用于续写重试）
+	// 非空时表示流已提交但中断，可用此文本构造续写请求
+	PartialAssistantText string
+
 	// OpenAI service_tier（2026-03新增）
 	// 响应中的 service_tier 字段决定计费倍率：priority=2x, flex=0.5x, default=1x
 	ServiceTier string
@@ -127,6 +131,10 @@ type proxyRequestContext struct {
 	startTime        time.Time        // 请求开始时间（用于统计）
 	attemptStartTime time.Time        // 渠道尝试开始时间（用于日志记录）
 	baseURL          string           // 当前尝试使用的上游URL（多URL场景）
+
+	// 续写相关（流中断后切换渠道时使用）
+	// resumeBody 非空时，表示本次是续写请求，使用此 body 替代原始 body
+	resumeBody []byte
 }
 
 // proxyResult 代理请求结果
@@ -140,6 +148,10 @@ type proxyResult struct {
 	succeeded        bool
 	isClientCanceled bool            // 客户端主动取消请求（context.Canceled）
 	nextAction       cooldown.Action // 统一重试决策：RetryKey/RetryChannel/ReturnClient
+
+	// 续写相关（流已提交但中断时填充）
+	partialAssistantText string // 已输出给客户端的 assistant 文本，非空时可构造续写请求
+	responseCommitted    bool   // 响应是否已提交（用于判断是否可续写）
 }
 
 // ErrorAction 已迁移到 cooldown.Action (internal/cooldown/manager.go)
